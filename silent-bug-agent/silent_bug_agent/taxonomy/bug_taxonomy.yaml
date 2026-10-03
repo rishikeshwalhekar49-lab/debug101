@@ -1,0 +1,263 @@
+# Seed taxonomy of silent DL training bugs.
+#
+# This is a starting set, not a claim of completeness. Categories draw on
+# published empirical studies of real DL bugs (Islam et al. 2019, Humbatova
+# et al. 2020) plus common training-debugging folklore. Add new entries as
+# your own tool surfaces real bugs these don't yet cover — that growth is
+# the point of Phase 6's learning loop.
+#
+# Schema (see loader.py for validation):
+#   id                  unique snake_case identifier
+#   name                short human-readable name
+#   category            one of: data, model_logic, training_dynamics,
+#                        api_misuse, environment
+#   symptoms            list of observable symptoms a user might report
+#   invariant_ids       list of invariant `id`s (from the invariants/
+#                        package) that can catch this at runtime; empty
+#                        list means no invariant exists yet
+#   static_detectable   can a code-level static check plausibly catch this
+#   runtime_detectable  can a runtime invariant plausibly catch this
+#   semantic_detectable does catching this need code-intent understanding
+#                        (an LLM comparing code to docstring/config), not
+#                        just a pattern match
+#   typical_fix         one-line fix guidance
+
+- id: missing_zero_grad
+  name: Missing optimizer.zero_grad()
+  category: training_dynamics
+  symptoms:
+    - loss decreases erratically or plateaus unexpectedly
+    - effective batch size appears to grow over time
+  invariant_ids: [gradient_norm_bounds]
+  static_detectable: true
+  runtime_detectable: true
+  semantic_detectable: false
+  typical_fix: Call optimizer.zero_grad() before each backward() unless gradient accumulation is intentional.
+
+- id: train_eval_mode_mismatch
+  name: BatchNorm/Dropout left in the wrong mode
+  category: api_misuse
+  symptoms:
+    - validation metrics much worse than training metrics
+    - validation metrics drift across runs with the same checkpoint
+  invariant_ids: [train_eval_mode_mismatch]
+  static_detectable: false
+  runtime_detectable: true
+  semantic_detectable: false
+  typical_fix: Call model.eval() before validation/inference and model.train() before resuming training.
+
+- id: frozen_layer_no_grad
+  name: Accidentally frozen trainable layer
+  category: model_logic
+  symptoms:
+    - a submodule's outputs never change across training
+    - overall loss improves slower than expected, as if under-parameterized
+  invariant_ids: [frozen_weights]
+  static_detectable: true
+  runtime_detectable: true
+  semantic_detectable: true
+  typical_fix: Check for stray torch.no_grad() scopes and confirm every intended parameter is in the optimizer's param group.
+
+- id: wrong_loss_reduction
+  name: Mismatched loss reduction (mean vs sum)
+  category: training_dynamics
+  symptoms:
+    - loss scale changes unexpectedly when batch size changes
+    - loss looks "stuck" at a much higher or lower magnitude than expected
+  invariant_ids: [loss_trend]
+  static_detectable: true
+  runtime_detectable: false
+  semantic_detectable: true
+  typical_fix: Confirm the loss function's reduction argument matches how the learning rate and any manual scaling were tuned.
+
+- id: label_data_misalignment
+  name: Features and labels desynced by a shuffle
+  category: data
+  symptoms:
+    - model trains but generalizes far worse than a naive baseline
+    - accuracy plateaus near chance despite falling loss
+  invariant_ids: []
+  static_detectable: false
+  runtime_detectable: false
+  semantic_detectable: true
+  typical_fix: Verify the same permutation/seed is applied to features and labels, or shuffle indices rather than the arrays independently.
+
+- id: data_leakage_train_test
+  name: Train/test data leakage
+  category: data
+  symptoms:
+    - validation metrics look implausibly good
+    - performance collapses on a genuinely held-out set later
+  invariant_ids: []
+  static_detectable: false
+  runtime_detectable: false
+  semantic_detectable: true
+  typical_fix: Audit the data split and any preprocessing (normalization stats, deduplication) for leakage across the split boundary.
+
+- id: incorrect_metric_averaging
+  name: Misleading aggregate metric
+  category: training_dynamics
+  symptoms:
+    - reported metric doesn't match manual recomputation from raw predictions
+    - metric is insensitive to a known class of errors
+  invariant_ids: []
+  static_detectable: true
+  runtime_detectable: false
+  semantic_detectable: true
+  typical_fix: Recompute the metric from raw per-example results and compare against the running average implementation.
+
+- id: exploding_gradients
+  name: Exploding gradients
+  category: training_dynamics
+  symptoms:
+    - loss suddenly spikes to NaN or a very large value
+    - training was stable, then diverges after many steps
+  invariant_ids: [gradient_norm_bounds]
+  static_detectable: false
+  runtime_detectable: true
+  semantic_detectable: false
+  typical_fix: Add gradient clipping, lower the learning rate, or check for a numerically unstable op.
+
+- id: vanishing_gradients
+  name: Vanishing gradients
+  category: training_dynamics
+  symptoms:
+    - deeper layers barely change while shallow layers train fine
+    - loss plateaus early despite a healthy learning rate for shallow layers
+  invariant_ids: [gradient_norm_bounds]
+  static_detectable: false
+  runtime_detectable: true
+  semantic_detectable: false
+  typical_fix: Check activation choice, initialization scheme, and consider normalization or residual connections.
+
+- id: dead_relu
+  name: Dead ReLU units
+  category: model_logic
+  symptoms:
+    - a large fraction of a layer's activations are always zero
+    - model capacity seems lower than the parameter count suggests
+  invariant_ids: [activation_health]
+  static_detectable: false
+  runtime_detectable: true
+  semantic_detectable: false
+  typical_fix: Lower the learning rate, switch to LeakyReLU/GELU, or adjust initialization.
+
+- id: non_normalized_inputs
+  name: Missing input normalization
+  category: data
+  symptoms:
+    - training is unstable only at the start
+    - loss is very sensitive to learning rate choice
+  invariant_ids: [activation_health]
+  static_detectable: true
+  runtime_detectable: true
+  semantic_detectable: true
+  typical_fix: Normalize/standardize inputs to match what the architecture and initialization assume.
+
+- id: mismatched_loss_task
+  name: Loss function doesn't match the task
+  category: model_logic
+  symptoms:
+    - loss decreases but predictions are qualitatively wrong
+    - metrics relevant to the actual task never improve
+  invariant_ids: []
+  static_detectable: false
+  runtime_detectable: false
+  semantic_detectable: true
+  typical_fix: Confirm the loss function matches the task type (e.g. cross-entropy for classification, not MSE).
+
+- id: learning_rate_misconfigured
+  name: Learning rate too high or too low
+  category: training_dynamics
+  symptoms:
+    - loss oscillates without converging (too high)
+    - loss decreases extremely slowly (too low)
+  invariant_ids: [loss_trend, gradient_norm_bounds]
+  static_detectable: false
+  runtime_detectable: true
+  semantic_detectable: false
+  typical_fix: Run a learning-rate range test and compare against the current schedule.
+
+- id: optimizer_state_leak_across_folds
+  name: Optimizer/scheduler state not reset between CV folds
+  category: training_dynamics
+  symptoms:
+    - later cross-validation folds train faster or slower than the first
+    - fold results are suspiciously correlated with fold order
+  invariant_ids: []
+  static_detectable: true
+  runtime_detectable: false
+  semantic_detectable: true
+  typical_fix: Reinitialize the model, optimizer, and scheduler at the start of every fold.
+
+- id: silent_device_fallback
+  name: Silent CPU fallback for GPU-intended tensors
+  category: environment
+  symptoms:
+    - training is much slower than expected
+    - GPU utilization is near zero despite training "running"
+  invariant_ids: []
+  static_detectable: true
+  runtime_detectable: true
+  semantic_detectable: false
+  typical_fix: Assert tensor/model device placement explicitly rather than relying on implicit casting.
+
+- id: unset_random_seed
+  name: Non-reproducible runs from unset random seed
+  category: environment
+  symptoms:
+    - repeated runs with identical code and data give different results
+    - a reported bug can't be reproduced
+  invariant_ids: []
+  static_detectable: true
+  runtime_detectable: false
+  semantic_detectable: false
+  typical_fix: Fix seeds for the RNGs actually in use (python, numpy, torch, and cuDNN determinism flags).
+
+- id: mixed_precision_overflow
+  name: Mixed-precision NaN/overflow
+  category: training_dynamics
+  symptoms:
+    - loss becomes NaN only under mixed precision, not full precision
+    - training is stable at first, then diverges after a schedule change
+  invariant_ids: [gradient_norm_bounds, activation_health]
+  static_detectable: false
+  runtime_detectable: true
+  semantic_detectable: false
+  typical_fix: Confirm the loss scaler is enabled and check for ops known to be unstable in fp16.
+
+- id: lr_scheduler_step_order_bug
+  name: Scheduler stepped in the wrong order relative to the optimizer
+  category: api_misuse
+  symptoms:
+    - the first scheduled learning-rate value is skipped
+    - logged learning rate doesn't match the configured schedule
+  invariant_ids: [loss_trend]
+  static_detectable: true
+  runtime_detectable: false
+  semantic_detectable: false
+  typical_fix: Call optimizer.step() before scheduler.step(), and verify against the framework's documented order.
+
+- id: duplicate_augmentation_applied_twice
+  name: Data augmentation applied twice
+  category: data
+  symptoms:
+    - inputs look visibly over-distorted when sampled and inspected
+    - training is unexpectedly harder than an equivalent published setup
+  invariant_ids: []
+  static_detectable: true
+  runtime_detectable: false
+  semantic_detectable: true
+  typical_fix: Check for the same augmentation applied in both a dataset transform and a collate function.
+
+- id: gradient_accumulation_miscount
+  name: Gradient accumulation step count mismatch
+  category: training_dynamics
+  symptoms:
+    - effective batch size doesn't match what was configured
+    - loss scale is inconsistent with the intended accumulation steps
+  invariant_ids: [gradient_norm_bounds]
+  static_detectable: true
+  runtime_detectable: true
+  semantic_detectable: false
+  typical_fix: Confirm zero_grad()/step() cadence matches the configured accumulation step count.

@@ -1,0 +1,41 @@
+# silent-bug-agent
+# Install with:  pip install -r requirements.txt
+
+# --- Core library (Phase 0) ---------------------------------------------
+# The invariant library and taxonomy need only this. If you don't want torch,
+# `pip install pyyaml` is enough for the demo and the tests.
+pyyaml>=6.0
+
+# --- Running on real PyTorch models (examples/torch_adapter.py, ------------
+# --- examples/planted_bugs_torch.py, and Phase 1) -------------------------
+# For CUDA, install the matching build from https://pytorch.org first.
+torch>=2.0
+# torchvision is only used by the MNIST script pre-filled in the custom-code
+# section of examples/planted_bugs_torch.py. Remove it if you replace that script.
+torchvision>=0.15
+
+# --- Testing --------------------------------------------------------------
+pytest>=7.0
+
+# ==========================================================================
+# Planned phases. Commented out because that code does not exist yet, and the
+# specific libraries are tentative: decide when each phase actually starts.
+# ==========================================================================
+
+# Phase 2: semantic (LLM) analyzer. Needs an API key in the environment
+# (never commit it; .env is already in .gitignore).
+# anthropic
+
+# Phase 1/2: supervisor / agent orchestration
+# langgraph
+
+# Phase 3: statistical tests for multi-seed comparison
+# numpy
+# scipy
+
+# Phase 4: knowledge graph (or swap for a graph database)
+# networkx
+
+# Phase 5: retrieval over past fixes (pick one vector store)
+# chromadb
+# faiss-cpu

@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Secrets (the Phase 2 semantic analyzer will need an API key; never commit it)
+.env
+*.key
+
+# Datasets and model files: the MNIST example in planted_bugs_torch.py
+# downloads into ./data when you run it
+data/
+*.pt
+*.pth
+*.ckpt
+
+# Experiment/training outputs
+runs/
+lightning_logs/
+wandb/
+checkpoints/
+
+# Editors / OS
+.idea/
+.vscode/
+.DS_Store
