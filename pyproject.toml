@@ -1,0 +1,46 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "silent-bug-agent"
+version = "0.2.0"
+description = "Detect, diagnose and fix silent bugs in deep learning training"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "silent-bug-agent contributors" }]
+keywords = ["deep-learning", "pytorch", "debugging", "silent-bugs", "static-analysis"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+torch = [
+    "torch>=2.0",
+    "torchvision>=0.15",
+]
+semantic = [
+    "anthropic>=0.18.0",
+]
+dev = [
+    "pytest>=7.0",
+]
+
+[project.scripts]
+silent-bug-agent = "silent_bug_agent.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["silent_bug_agent*"]
+
+[tool.setuptools.package-data]
+silent_bug_agent = ["taxonomy/*.yaml"]

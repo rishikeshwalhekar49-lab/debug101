@@ -27,6 +27,7 @@ runs/
 lightning_logs/
 wandb/
 checkpoints/
+concepts/
 
 # Editors / OS
 .idea/

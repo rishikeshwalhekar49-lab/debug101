@@ -261,3 +261,16 @@
   runtime_detectable: true
   semantic_detectable: false
   typical_fix: Confirm zero_grad()/step() cadence matches the configured accumulation step count.
+
+- id: softmax_before_cross_entropy
+  name: Softmax applied before CrossEntropyLoss
+  category: model_logic
+  symptoms:
+    - model trains but accuracy plateaus well below expected
+    - gradients are unusually small despite a reasonable learning rate
+    - loss decreases but predictions remain near-uniform across classes
+  invariant_ids: []
+  static_detectable: true
+  runtime_detectable: false
+  semantic_detectable: true
+  typical_fix: Remove the explicit softmax/log_softmax from the model's forward() output when using CrossEntropyLoss (it applies LogSoftmax internally).
