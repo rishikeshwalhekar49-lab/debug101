@@ -1,4 +1,4 @@
-# silent-bug-agent
+# Deep Learning debugger
 
 An open-source agent that **detects, diagnoses and fixes silent bugs in deep
 learning training**: the kind where the code runs without errors, the loss even
