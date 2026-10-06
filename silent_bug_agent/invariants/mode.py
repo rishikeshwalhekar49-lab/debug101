@@ -25,7 +25,7 @@ class TrainEvalModeInvariant(Invariant):
             if any(s in name.lower() for s in _MODE_SENSITIVE_SUBSTRINGS) and mode != expected_mode
         }
         if not offenders:
-            return InvariantResult(self.id, True, Severity.INFO, "Module modes match the current phase")
+            return InvariantResult(self.id, True, Severity.INFO, "Module modes match the current module")
 
         return InvariantResult(
             self.id,

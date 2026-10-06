@@ -4,7 +4,7 @@
 # published empirical studies of real DL bugs (Islam et al. 2019, Humbatova
 # et al. 2020) plus common training-debugging folklore. Add new entries as
 # your own tool surfaces real bugs these don't yet cover — that growth is
-# the point of Phase 6's learning loop.
+# the point of Module 6's learning loop.
 #
 # Schema (see loader.py for validation):
 #   id                  unique snake_case identifier

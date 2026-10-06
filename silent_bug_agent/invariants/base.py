@@ -1,11 +1,11 @@
 """Core types shared by every invariant.
 
 TrainingState is the contract between whatever produces training data
-(a live PyTorch run in Phase 1, a replayed log, or a synthetic test
-fixture here in Phase 0) and the invariants that check it. Nothing in
+(a live PyTorch run in Module 1, a replayed log, or a synthetic test
+fixture here in Module 0) and the invariants that check it. Nothing in
 this module or in the concrete invariants imports torch — that keeps
 the library testable without a GPU or even torch installed, and keeps
-Phase 0 usable standalone before Phase 1's hooks exist.
+Module 0 usable standalone before Module 1's hooks exist.
 """
 
 from dataclasses import dataclass, field
@@ -37,7 +37,7 @@ class TrainingState:
     """A framework-agnostic snapshot of training at a single step.
 
     Fields are intentionally plain Python (dicts, lists, floats) so the
-    same invariants can run against a live PyTorch run (Phase 1), a
+    same invariants can run against a live PyTorch run (Module 1), a
     replayed training log, or a synthetic fixture in a test.
 
     Attributes:

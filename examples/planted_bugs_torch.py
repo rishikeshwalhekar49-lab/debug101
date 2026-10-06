@@ -1,4 +1,4 @@
-"""Test bench for the Phase 0 invariants (requires torch).
+"""Test bench for the Module 0 invariants (requires torch).
 
 Two ways to use it, from the repo root (torch_adapter.py must be in this folder):
 
@@ -303,7 +303,7 @@ def run_one(bug, steps=200):
 
 
 def main():
-    ap = argparse.ArgumentParser(description="Phase 0 invariant test bench")
+    ap = argparse.ArgumentParser(description="Module 0 invariant test bench")
     ap.add_argument(
         "--bug",
         choices=[*EXPECTED, "custom", "all"],

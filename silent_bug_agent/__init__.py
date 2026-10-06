@@ -1,7 +1,7 @@
 """silent_bug_agent — Silent bug detection for deep learning training.
 
-Phase 0: bug taxonomy and invariant library
-Phase 2: AST static analyzer and LLM semantic reviewer
+Module 0: bug taxonomy and invariant library
+Module 2: AST static analyzer and LLM semantic reviewer
 """
 
 from .findings import Finding, Report, merge_reports, parse_severity

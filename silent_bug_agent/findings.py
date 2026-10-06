@@ -1,10 +1,10 @@
 """Common bug-report format shared by every detector.
 
-Static analysis (Phase 2), semantic analysis (Phase 2) and, later, the
-runtime monitor (Phase 1) all emit `Finding` objects, so whatever
+Static analysis (Module 2), semantic analysis (Module 2) and, later, the
+runtime monitor (Module 1) all emit `Finding` objects, so whatever
 consumes them (the supervisor, a CLI, a CI job) never needs to know
 which detector produced what. `bug_id` always refers to an entry in the
-Phase 0 taxonomy, which is what ties the detectors together.
+Module 0 taxonomy, which is what ties the detectors together.
 """
 
 import json
@@ -24,7 +24,7 @@ def parse_severity(value) -> Severity:
 
 @dataclass
 class Finding:
-    bug_id: str  # id of a Phase 0 taxonomy entry
+    bug_id: str  # id of a Module 0 taxonomy entry
     detector: str  # "static" | "semantic" | "runtime"
     message: str
     severity: Severity

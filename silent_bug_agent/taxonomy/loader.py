@@ -94,7 +94,7 @@ def load_taxonomy(path: Path = _DEFAULT_PATH) -> List[BugPattern]:
 def coverage_report(patterns: List[BugPattern]) -> dict:
     """Summarize how many taxonomy entries already have a runtime invariant.
 
-    Useful for prioritizing Phase 1/2 work: entries with
+    Useful for prioritizing Module 1/2 work: entries with
     runtime_detectable=True but invariant_ids=[] are gaps in this
     package's implementation, not gaps in the taxonomy itself.
     """

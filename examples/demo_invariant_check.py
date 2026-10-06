@@ -1,6 +1,6 @@
 """Demo: run the invariant library against synthetic TrainingState snapshots.
 
-No torch dependency — this simulates the shape of data Phase 1's PyTorch
+No torch dependency — this simulates the shape of data Module 1's PyTorch
 hooks will eventually produce, so the invariant library can be exercised
 and tested before that integration exists.
 

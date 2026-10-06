@@ -1,6 +1,6 @@
-"""Stopgap adapter: feed a live PyTorch training loop into the Phase 0 invariants.
+"""Stopgap adapter: feed a live PyTorch training loop into the Module 0 invariants.
 
-Phase 1 will replace this with proper hooks. Until then, this lets you run the
+Module 1 will replace this with proper hooks. Until then, this lets you run the
 invariant library against your own training code.
 
 NOT TESTED AGAINST REAL TORCH when written (the build sandbox had no torch).

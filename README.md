@@ -6,7 +6,7 @@ goes down, and the model still doesn't learn what you think it does.
 
 > **Status: active development.** The foundation (bug taxonomy + runtime
 > invariants) is built and tested, the PyTorch adapter bench verified on real
-> PyTorch, and Phase 2 (AST static analyzer + semantic LLM reviewer + CLI) is
+> PyTorch, and Module 2 (AST static analyzer + semantic LLM reviewer + CLI) is
 > implemented with **55/55 tests passing**. See [Project status](#project-status).
 
 ## Why this exists
@@ -26,12 +26,12 @@ project aims to automate that session.
 
 ## Project status
 
-| Phase | What it is | Status |
+| Module | What it is | Status |
 |---|---|---|
 | 0 | Bug taxonomy + runtime invariant library | **Built, 13/13 tests passing** |
 | – | PyTorch adapter + test bench (`examples/`) | **Verified on real PyTorch (6/6 detected/passed)** |
 | 1 | PyTorch hooks, live runtime monitor | Planned (the adapter is a working prototype) |
-| 2 | Static analyzer (AST) + semantic (LLM) analyzer + CLI | **Built, 55/55 tests passing across Phases 0 & 2** |
+| 2 | Static analyzer (AST) + semantic (LLM) analyzer + CLI | **Built, 55/55 tests passing across Modules 0 & 2** |
 | 3 | One-batch-overfit and multi-seed validation | Planned |
 | 4 | Root-cause diagnosis | Planned |
 | 5 | Fix synthesis and patch validation | Planned |
@@ -124,7 +124,7 @@ lines, `collector = TorchStateCollector(model)` after the model is built and
 python examples/planted_bugs_torch.py --bug custom
 ```
 
-## Phase 0 in detail
+## Module 0 in detail
 
 **Taxonomy** (`silent_bug_agent/taxonomy/bug_taxonomy.yaml`): 21 seed bug
 patterns, each with symptoms, a category, whether it is detectable statically /
@@ -139,7 +139,7 @@ practice.
 |---|---|
 | `gradient_norm_bounds` | exploding or vanishing gradients, NaN gradients |
 | `frozen_weights` | a trainable parameter that stops changing |
-| `train_eval_mode_mismatch` | BatchNorm/Dropout in the wrong mode for the phase |
+| `train_eval_mode_mismatch` | BatchNorm/Dropout in the wrong mode for the module |
 | `activation_health` | NaN/Inf activations, mostly-dead units |
 | `loss_trend` | loss not improving over a window (deliberately *not* a monotonic check) |
 
@@ -150,9 +150,9 @@ from silent_bug_agent.taxonomy import load_taxonomy, coverage_report
 print(coverage_report(load_taxonomy()))
 ```
 
-## Phase 2 in detail
+## Module 2 in detail
 
-Phase 2 adds code-level detectors that catch silent bugs before or alongside training:
+Module 2 adds code-level detectors that catch silent bugs before or alongside training:
 
 1. **AST Static Analyzer** (`silent_bug_agent/static/`):
    - Zero-dependency Python stdlib `ast` analyzer.
@@ -189,7 +189,7 @@ silent-bug-agent/
 │   ├── __init__.py
 │   ├── findings.py                   # shared bug-report format
 │   ├── cli.py                        # scan entry point
-│   ├── invariants/                   # Phase 0: runtime invariant checks
+│   ├── invariants/                   # Module 0: runtime invariant checks
 │   │   ├── __init__.py
 │   │   ├── base.py                   #   TrainingState, Invariant, Severity
 │   │   ├── gradient.py
@@ -198,26 +198,26 @@ silent-bug-agent/
 │   │   ├── activation.py
 │   │   ├── loss.py
 │   │   └── registry.py
-│   ├── taxonomy/                     # Phase 0: known silent-bug catalogue
+│   ├── taxonomy/                     # Module 0: known silent-bug catalogue
 │   │   ├── __init__.py
 │   │   ├── bug_taxonomy.yaml
 │   │   └── loader.py
-│   ├── static/                       # Phase 2: AST-based rules
+│   ├── static/                       # Module 2: AST-based rules
 │   │   ├── __init__.py
 │   │   ├── base.py
 │   │   ├── rules.py
 │   │   └── analyzer.py
-│   ├── semantic/                     # Phase 2: LLM reviewer
+│   ├── semantic/                     # Module 2: LLM reviewer
 │   │   ├── __init__.py
 │   │   ├── client.py
 │   │   ├── prompt.py
 │   │   └── analyzer.py
-│   ├── runtime/                      # (planned) Phase 1: PyTorch hooks
-│   ├── validation/                   # (planned) Phase 3: overfit + multi-seed
-│   ├── diagnosis/                    # (planned) Phase 4: root cause
-│   ├── repair/                       # (planned) Phase 5: fix synthesis
-│   ├── learning/                     # (planned) Phase 6: experience extraction
-│   └── meta/                         # (planned) Phase 7: meta-evolution
+│   ├── runtime/                      # (planned) Module 1: PyTorch hooks
+│   ├── validation/                   # (planned) Module 3: overfit + multi-seed
+│   ├── diagnosis/                    # (planned) Module 4: root cause
+│   ├── repair/                       # (planned) Module 5: fix synthesis
+│   ├── learning/                     # (planned) Module 6: experience extraction
+│   └── meta/                         # (planned) Module 7: meta-evolution
 ├── examples/
 │   ├── demo_invariant_check.py       # synthetic scenarios, no torch
 │   ├── torch_adapter.py              # stopgap TrainingState collector for torch
@@ -235,13 +235,13 @@ silent-bug-agent/
 
 ## Roadmap
 
-1. **Phase 1, live runtime monitor.** Proper PyTorch hooks populate `TrainingState` every step; violations become alerts with a reproducible trace.
-2. **Phase 2, static + semantic detectors.** *(Completed)* AST-based analyzer and LLM reviewer with CLI.
-3. **Phase 3, validation oracle.** One-batch-overfit test and multi-seed reproduction, comparing metric distributions rather than single runs.
-4. **Phase 4, root-cause diagnosis.** A small knowledge graph seeded from the taxonomy; statistical specs checked against Phase 3 runs.
-5. **Phase 5, repair.** LLM + retrieval fix synthesis; every candidate patch is validated with Phase 3 runs.
-6. **Phase 6, learning loop.** Verified repairs are logged into the knowledge base; a contextual bandit picks which repair strategy to try first.
-7. **Phase 7, meta-evolution** (research track). Automated prompt and workflow search, only once there is real outcome data.
+1. **Module 1, live runtime monitor.** Proper PyTorch hooks populate `TrainingState` every step; violations become alerts with a reproducible trace.
+2. **Module 2, static + semantic detectors.** *(Completed)* AST-based analyzer and LLM reviewer with CLI.
+3. **Module 3, validation oracle.** One-batch-overfit test and multi-seed reproduction, comparing metric distributions rather than single runs.
+4. **Module 4, root-cause diagnosis.** A small knowledge graph seeded from the taxonomy; statistical specs checked against Module 3 runs.
+5. **Module 5, repair.** LLM + retrieval fix synthesis; every candidate patch is validated with Module 3 runs.
+6. **Module 6, learning loop.** Verified repairs are logged into the knowledge base; a contextual bandit picks which repair strategy to try first.
+7. **Module 7, meta-evolution** (research track). Automated prompt and workflow search, only once there is real outcome data.
 
 ## License
 
