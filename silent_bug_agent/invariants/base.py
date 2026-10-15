@@ -57,6 +57,10 @@ class TrainingState:
             flag of named submodules (BatchNorm, Dropout, etc.) at this step.
         is_eval_phase: True if this snapshot was taken during an
             evaluation/validation pass rather than a training step.
+        extra: Optional producer-specific data that the invariants do not
+            need, e.g. loss dynamics (EMA, z-score, spike flag), global
+            gradient/weight norms, learning rates and histograms written by
+            the Module 1 runtime hooks. Plain Python values only.
     """
 
     step: int
@@ -67,6 +71,7 @@ class TrainingState:
     activation_stats: Dict[str, Dict[str, float]] = field(default_factory=dict)
     module_modes: Dict[str, str] = field(default_factory=dict)
     is_eval_phase: bool = False
+    extra: Dict[str, Any] = field(default_factory=dict)
 
 
 class Invariant:

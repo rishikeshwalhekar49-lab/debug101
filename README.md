@@ -5,9 +5,11 @@ learning training**: the kind where the code runs without errors, the loss even
 goes down, and the model still doesn't learn what you think it does.
 
 > **Status: active development.** The foundation (bug taxonomy + runtime
-> invariants) is built and tested, the PyTorch adapter bench verified on real
-> PyTorch, and Module 2 (AST static analyzer + semantic LLM reviewer + CLI) is
-> implemented with **55/55 tests passing**. See [Project status](#project-status).
+> invariants) is built and tested, Module 2 (AST static analyzer + semantic LLM
+> reviewer + CLI) is implemented, and the Module 1 runtime hooks (the Runtime
+> Monitor Agent's perception layer) now feed live PyTorch runs into the
+> invariants, with **90/90 tests passing** (the 21 runtime tests need torch).
+> See [Project status](#project-status).
 
 ## Why this exists
 
@@ -30,7 +32,7 @@ project aims to automate that session.
 |---|---|---|
 | 0 | Bug taxonomy + runtime invariant library | **Built, 13/13 tests passing** |
 | – | PyTorch adapter + test bench (`examples/`) | **Verified on real PyTorch (6/6 detected/passed)** |
-| 1 | PyTorch hooks, live runtime monitor | Planned (the adapter is a working prototype) |
+| 1 | PyTorch hooks, live runtime monitor | **Hooks built** (`silent_bug_agent/runtime/`): 21 tests, standalone validation on 7 architectures, same 6/6 planted-bug verdicts as the adapter. Runtime Monitor Agent: planned |
 | 2 | Static analyzer (AST) + semantic (LLM) analyzer + CLI | **Built, 55/55 tests passing across Modules 0 & 2** |
 | 3 | One-batch-overfit and multi-seed validation | Planned |
 | 4 | Root-cause diagnosis | Planned |
@@ -113,6 +115,34 @@ python examples/demo_invariant_check.py
 python examples/planted_bugs_torch.py --bug all
 ```
 
+### Monitor a live PyTorch run with the runtime hooks (Module 1)
+
+Attach to an existing model and optimizer. The training loop and the model code
+stay unchanged.
+
+```python
+from silent_bug_agent import get_default_registry
+from silent_bug_agent.runtime import RuntimeHooks
+
+hooks = RuntimeHooks(model, optimizer, invariants=get_default_registry()).attach()
+for x, y in train_loader:            # unchanged training loop
+    optimizer.zero_grad()
+    criterion(model(x), y).backward()
+    optimizer.step()                 # one TrainingState per step
+hooks.detach()
+
+print(hooks.failures)                # [(step, InvariantResult), ...]
+states = hooks.stream.drain()        # or hooks.stream.get() from an agent thread
+```
+
+Validate the hooks on 7 standard architectures and the planted-bug scenarios:
+
+```bash
+python -m silent_bug_agent.runtime.validate            # add --device cuda on a GPU machine
+```
+
+Details are in [docs/module1_runtime_hooks.md](docs/module1_runtime_hooks.md).
+
 ### Test your own training script
 
 Open `examples/planted_bugs_torch.py` and paste your script into the
@@ -149,6 +179,35 @@ Check how much of the taxonomy is covered:
 from silent_bug_agent.taxonomy import load_taxonomy, coverage_report
 print(coverage_report(load_taxonomy()))
 ```
+
+## Module 1 in detail (runtime hooks)
+
+`silent_bug_agent/runtime/hooks.py` is the perception layer of the Runtime
+Monitor Agent. `RuntimeHooks` attaches hooks to a model and optimizer
+without changing their code, and fills a `TrainingState` at every monitored step:
+
+| `TrainingState` field | Filled by |
+|---|---|
+| `grad_norms`, `weight_deltas`, `requires_grad` | optimizer step pre/post hooks, per parameter |
+| `activation_stats` (`mean`, `std`, `nan_count`, `inf_count`, `zero_frac`, plus `min`, `max`, `abs_mean`, `saturated_frac`, `norm`) | forward hooks on every leaf layer |
+| per-layer gradient flow (`grad_norm`, `grad_abs_mean`, `grad_abs_max`, `grad_nan_count`, `grad_inf_count` inside `activation_stats`) | backward hooks on each layer's output |
+| `loss_history`, and `extra["loss"]` (EMA, z-score, spike flag) | `backward()` wrapper |
+| `module_modes`, `is_eval_phase` | automatic eval-phase snapshots when the model runs under `torch.no_grad()` |
+
+Labels match `examples/torch_adapter.py` (`"bn1[BatchNorm1d]"`), so all five
+invariants work unchanged.
+
+How it stays cheap:
+
+- Statistics are computed on the GPU from views and sampled above 65,536 elements, with one full NaN/Inf check.
+- Hooks never synchronise with the GPU. Each step makes one async device-to-host copy into reused pinned buffers.
+- A non-blocking ring buffer (`SnapshotStream`) streams snapshots to the agent.
+
+`TrainingState` gained one optional field, `extra`, for producer-specific data
+that the invariants don't need.
+
+Full design, validation results and overhead numbers are in
+[docs/module1_runtime_hooks.md](docs/module1_runtime_hooks.md).
 
 ## Module 2 in detail
 
@@ -212,7 +271,11 @@ silent-bug-agent/
 │   │   ├── client.py
 │   │   ├── prompt.py
 │   │   └── analyzer.py
-│   ├── runtime/                      # (planned) Module 1: PyTorch hooks
+│   ├── runtime/                      # Module 1: PyTorch hooks -> TrainingState
+│   │   ├── __init__.py
+│   │   ├── hooks.py                  #   RuntimeHooks, collectors, SnapshotStream
+│   │   ├── numerics.py               #   EMA z-score spike detector (no torch)
+│   │   └── validate.py               #   standalone validation across architectures
 │   ├── validation/                   # (planned) Module 3: overfit + multi-seed
 │   ├── diagnosis/                    # (planned) Module 4: root cause
 │   ├── repair/                       # (planned) Module 5: fix synthesis
@@ -225,7 +288,10 @@ silent-bug-agent/
 │   └── sample_scripts/               # buggy and clean scripts for testing
 │       ├── buggy_mnist.py
 │       └── clean_mnist.py
+├── docs/
+│   └── module1_runtime_hooks.md      # Module 1 design, API, validation results
 └── tests/
+    ├── test_runtime_hooks.py         # Module 1 (skipped without torch)
     ├── test_invariants.py
     ├── test_findings.py
     ├── test_static.py
@@ -235,7 +301,7 @@ silent-bug-agent/
 
 ## Roadmap
 
-1. **Module 1, live runtime monitor.** Proper PyTorch hooks populate `TrainingState` every step; violations become alerts with a reproducible trace.
+1. **Module 1, live runtime monitor.** *(Hooks completed)* PyTorch hooks populate `TrainingState` every step (`silent_bug_agent/runtime/`). Next: the Runtime Monitor Agent consumes the snapshot stream and turns violations into alerts with a reproducible trace.
 2. **Module 2, static + semantic detectors.** *(Completed)* AST-based analyzer and LLM reviewer with CLI.
 3. **Module 3, validation oracle.** One-batch-overfit test and multi-seed reproduction, comparing metric distributions rather than single runs.
 4. **Module 4, root-cause diagnosis.** A small knowledge graph seeded from the taxonomy; statistical specs checked against Module 3 runs.
