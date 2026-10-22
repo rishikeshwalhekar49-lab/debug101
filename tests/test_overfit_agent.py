@@ -1,7 +1,22 @@
 import torch
 from torch import nn
 from torch.utils.data import DataLoader, TensorDataset
-from trainmedic.repair.patch import Patch
+class PatchCandidate:
+    def __init__(self, path: str, original: str, replacement: str):
+        self.path = path
+        self.original = original
+        self.replacement = replacement
+
+    @classmethod
+    def from_sources(cls, path: str, original: str, replacement: str):
+        return cls(path, original, replacement)
+
+    def apply(self, sources: dict[str, str]) -> dict[str, str]:
+        patched = dict(sources)
+        if patched.get(self.path) != self.original:
+            raise ValueError(f"Source does not match patch base: {self.path}")
+        patched[self.path] = self.replacement
+        return patched
 
 from silent_bug_agent.validation.overfit_agent import (
     calculate_loss_slope,
@@ -107,7 +122,7 @@ def test_overfit_one_batch_accepts_a_batch():
 def test_candidate_patch_is_applied_before_overfit_check():
     buggy_code = "weight = 0.0\n"
     patched_code = "weight = 2.5\n"
-    patch = Patch.from_sources("model.py", buggy_code, patched_code)
+    patch = PatchCandidate.from_sources("model.py", buggy_code, patched_code)
 
     inputs = torch.linspace(-1, 1, 32).unsqueeze(1)
     targets = 3 * inputs + 2
