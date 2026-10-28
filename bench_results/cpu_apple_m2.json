@@ -1,0 +1,260 @@
+{
+  "environment": {
+    "date": "2026-10-28",
+    "torch": "2.14.1",
+    "python": "3.12.13",
+    "platform": "macOS-27.0.1-arm64-arm-64bit",
+    "processor": "arm",
+    "device": "cpu",
+    "cpu_threads": 4
+  },
+  "budget": 0.05,
+  "steps": 8,
+  "reps": 3,
+  "quick": false,
+  "results": [
+    {
+      "workload": "resnet50",
+      "description": "ResNet-50, 8x3x224x224, SGD+momentum",
+      "parameters": 25557032,
+      "baseline_step_ms": 613.9854583798297,
+      "overhead": {
+        "hooks_every_step": 0.12632824625730588,
+        "agent_every_step": 0.11688651305532494,
+        "agent_governed": -0.008160515277515823
+      },
+      "governor": {
+        "every_n_steps": 6,
+        "estimated_overhead": 0.025481780811748355,
+        "cost_per_monitored_step_ms": 90.44308350712527,
+        "baseline_step_ms": 591.5539169945987,
+        "probes": 1,
+        "adjustments": [
+          [
+            14,
+            6
+          ]
+        ]
+      },
+      "false_alarms_on_healthy_training": [
+        "dead_relu"
+      ],
+      "memory": {
+        "device": "cpu",
+        "checked": false,
+        "note": "CPU tensors have no exact allocation counter"
+      },
+      "profiler_added_ops": [
+        {
+          "op": "aten::sum",
+          "added_calls": 344,
+          "added_cpu_us": 37481.629000001885,
+          "added_device_us": 0.0
+        },
+        {
+          "op": "aten::copy_",
+          "added_calls": 920,
+          "added_cpu_us": 21059.706499999487,
+          "added_device_us": 0.0
+        },
+        {
+          "op": "aten::dot",
+          "added_calls": 483,
+          "added_cpu_us": 7430.00100000028,
+          "added_device_us": 0.0
+        },
+        {
+          "op": "aten::abs",
+          "added_calls": 372,
+          "added_cpu_us": 4710.369999999122,
+          "added_device_us": 0.0
+        },
+        {
+          "op": "aten::sub_",
+          "added_calls": 161,
+          "added_cpu_us": 4219.803999999538,
+          "added_device_us": 0.0
+        },
+        {
+          "op": "Optimizer.step#SGD.step",
+          "added_calls": 0,
+          "added_cpu_us": 2852.775500002026,
+          "added_device_us": 0.0
+        },
+        {
+          "op": "aten::amax",
+          "added_calls": 180,
+          "added_cpu_us": 2547.1715000004624,
+          "added_device_us": 0.0
+        },
+        {
+          "op": "aten::eq",
+          "added_calls": 30,
+          "added_cpu_us": 1959.54900000029,
+          "added_device_us": 0.0
+        }
+      ]
+    },
+    {
+      "workload": "transformer",
+      "description": "Transformer LM (6 layers, d=512, 8 heads, vocab 32k), 4x255 tokens, AdamW",
+      "parameters": 51715328,
+      "baseline_step_ms": 505.9158231233596,
+      "overhead": {
+        "hooks_every_step": 0.10026862330926023,
+        "agent_every_step": 0.06626811405863453,
+        "agent_governed": 0.016730414763689527
+      },
+      "governor": {
+        "every_n_steps": 4,
+        "estimated_overhead": 0.02634466120049053,
+        "cost_per_monitored_step_ms": 53.393624999444,
+        "baseline_step_ms": 506.68354200024623,
+        "probes": 1,
+        "adjustments": [
+          [
+            14,
+            4
+          ]
+        ]
+      },
+      "false_alarms_on_healthy_training": [],
+      "memory": {
+        "device": "cpu",
+        "checked": false,
+        "note": "CPU tensors have no exact allocation counter"
+      },
+      "profiler_added_ops": [
+        {
+          "op": "aten::sum",
+          "added_calls": 117,
+          "added_cpu_us": 9057.607999999549,
+          "added_device_us": 0.0
+        },
+        {
+          "op": "aten::copy_",
+          "added_calls": 359,
+          "added_cpu_us": 8152.022500001005,
+          "added_device_us": 0.0
+        },
+        {
+          "op": "aten::dot",
+          "added_calls": 231,
+          "added_cpu_us": 8117.964499999565,
+          "added_device_us": 0.0
+        },
+        {
+          "op": "aten::abs",
+          "added_calls": 170,
+          "added_cpu_us": 5543.746499999805,
+          "added_device_us": 0.0
+        },
+        {
+          "op": "aten::sub_",
+          "added_calls": 77,
+          "added_cpu_us": 5534.356499999703,
+          "added_device_us": 0.0
+        },
+        {
+          "op": "aten::amax",
+          "added_calls": 79,
+          "added_cpu_us": 3172.1015000002226,
+          "added_device_us": 0.0
+        },
+        {
+          "op": "Optimizer.step#AdamW.step",
+          "added_calls": 0,
+          "added_cpu_us": 1639.3984999991662,
+          "added_device_us": 0.0
+        },
+        {
+          "op": "aten::eq",
+          "added_calls": 13,
+          "added_cpu_us": 567.8780000003171,
+          "added_device_us": 0.0
+        }
+      ]
+    },
+    {
+      "workload": "mlp",
+      "description": "MLP 1024-4096-4096-4096-1000, batch 512, AdamW",
+      "parameters": 41858024,
+      "baseline_step_ms": 213.1912500008184,
+      "overhead": {
+        "hooks_every_step": 0.10877791754479782,
+        "agent_every_step": 0.12029317060621647,
+        "agent_governed": 0.027326866722835907
+      },
+      "governor": {
+        "every_n_steps": 4,
+        "estimated_overhead": 0.026897375959668023,
+        "cost_per_monitored_step_ms": 22.92606350238202,
+        "baseline_step_ms": 213.08829099871218,
+        "probes": 1,
+        "adjustments": [
+          [
+            14,
+            4
+          ]
+        ]
+      },
+      "false_alarms_on_healthy_training": [],
+      "memory": {
+        "device": "cpu",
+        "checked": false,
+        "note": "CPU tensors have no exact allocation counter"
+      },
+      "profiler_added_ops": [
+        {
+          "op": "aten::copy_",
+          "added_calls": 83,
+          "added_cpu_us": 5894.482499999921,
+          "added_device_us": 0.0
+        },
+        {
+          "op": "aten::dot",
+          "added_calls": 24,
+          "added_cpu_us": 5757.692999999868,
+          "added_device_us": 0.0
+        },
+        {
+          "op": "aten::abs",
+          "added_calls": 38,
+          "added_cpu_us": 4782.771000000052,
+          "added_device_us": 0.0
+        },
+        {
+          "op": "aten::sub_",
+          "added_calls": 8,
+          "added_cpu_us": 3056.576500000054,
+          "added_device_us": 0.0
+        },
+        {
+          "op": "aten::amax",
+          "added_calls": 13,
+          "added_cpu_us": 2753.1159999999945,
+          "added_device_us": 0.0
+        },
+        {
+          "op": "aten::sum",
+          "added_calls": 32,
+          "added_cpu_us": 2142.998999999967,
+          "added_device_us": 0.0
+        },
+        {
+          "op": "aten::addmm",
+          "added_calls": 0,
+          "added_cpu_us": 906.6939999999304,
+          "added_device_us": 0.0
+        },
+        {
+          "op": "Optimizer.step#AdamW.step",
+          "added_calls": 0,
+          "added_cpu_us": 627.6480000000447,
+          "added_device_us": 0.0
+        }
+      ]
+    }
+  ],
+  "failures": []
+}

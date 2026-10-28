@@ -10,8 +10,9 @@ Sensors (all removable with :meth:`RuntimeHooks.detach`):
 * **forward hooks** on every leaf layer (plus ``nn.MultiheadAttention`` and RNN
   modules as units) -> ``activation_stats``: the contract keys ``mean``, ``std``,
   ``nan_count``, ``inf_count``, ``zero_frac`` plus ``min``, ``max``, ``abs_mean``,
-  ``saturated_frac`` (tanh/sigmoid), ``dead_unit_frac`` (ReLU layers: fraction of
-  units that output zero for every sample in the batch), ``norm``, ``numel``, ``calls``;
+  ``saturated_frac`` (tanh/sigmoid), ``dead_unit_frac`` (ReLU layers, batches of at
+  least 16: fraction of units that output zero for every sample in the batch),
+  ``norm``, ``numel``, ``calls``;
 * **backward (tensor) hooks** on each layer's output -> gradient flowing back
   through the layer: ``grad_norm``, ``grad_abs_mean``, ``grad_abs_max``,
   ``grad_nan_count``, ``grad_inf_count`` inside the same ``activation_stats`` entry;
@@ -69,6 +70,8 @@ ACT_FIELDS = ("mean", "std", "min", "max", "abs_mean", "zero_frac", "saturated_f
               "dead_unit_frac")
 GRAD_FIELDS = ("grad_norm", "grad_abs_mean", "grad_abs_max", "grad_nan_count", "grad_inf_count")
 PARAM_FIELDS = ("grad_norm", "grad_abs_max", "weight_norm", "delta_norm")
+# dead_unit_frac needs this many samples: "zero for every sample" of a handful is weak evidence of a dead unit
+MIN_DEAD_UNIT_BATCH = 16
 
 _SKIP_TYPES: Tuple[type, ...] = (nn.Identity, nn.Flatten, nn.Unflatten, nn.modules.loss._Loss)
 _UNIT_TYPES: Tuple[type, ...] = (nn.MultiheadAttention, nn.RNNBase)
@@ -183,7 +186,7 @@ class TensorStatsExtractor:
         A dying-ReLU layer is often only partly dead, so its overall ``zero_frac`` stays
         below the 90% activation_health threshold while many units never fire. Units are
         sampled with a strided view (columns) like the other statistics."""
-        if x.dim() < 2 or x.shape[0] < 2:
+        if x.dim() < 2 or x.shape[0] < MIN_DEAD_UNIT_BATCH:
             return torch.full((), float("nan"), dtype=torch.float32, device=x.device)
         u = x.detach().reshape(x.shape[0], -1)
         stride = max(1, math.ceil(u.numel() / self.max_elems))
@@ -498,7 +501,7 @@ class ActivationCollector:
         nan = self._nan[key]
         vals = []
         for i, kind in enumerate(self.saturation):
-            if kind == "relu" and i in observed and st.shape[i][0] >= 2:
+            if kind == "relu" and i in observed and st.shape[i][0] >= MIN_DEAD_UNIT_BATCH:
                 vals.append((st.row(i).abs().amax(0) == 0).float().mean())
             else:
                 vals.append(nan)

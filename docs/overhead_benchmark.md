@@ -19,7 +19,7 @@ Measured on an Apple M2 GPU (MPS), torch 2.14.1, in the final run (5 repetitions
 | MLP (41.9 M params) | 114 ms | +25.3% | **+4.7%** | 9 | 0 B | 0 B | none |
 
 - **Overhead: met.** With the default overhead governor, the observation overhead was below 5% on all three
-  heavy workloads, in both benchmark runs (section 3.2).
+  heavy workloads, in both GPU runs (section 3.2) and on CPU (section 3.3: +2.7% at most).
 - **GPU memory leaks: none.** Exact allocated-byte counters show 0 B of growth during monitoring and 0 B left
   after detach, in every cycle, for every workload.
 - **Every-step monitoring** costs 3–25% on this GPU. The governor therefore monitors one step in 3 to 9.
@@ -142,7 +142,27 @@ background load). The final run's −7.8% for the governed Transformer is the sa
 governed block happened to be faster than the baseline blocks. The governor's own estimate for that run is
 2.5%. Because of this variation the governor aims at 3% rather than 5% (section 5).
 
-### 3.3 Where the time goes (PyTorch profiler, ResNet-50)
+### 3.3 CPU (Apple M2, 4 threads, 3 repetitions × 8 timed steps)
+
+Raw data: `bench_results/cpu_apple_m2.json` and `bench_results/cpu_apple_m2.md`. CPU tensors have no exact
+allocation counter, so the GPU memory columns do not apply.
+
+| workload | baseline step | hooks every step | agent every step | agent governed | N | governor's own estimate |
+|---|---|---|---|---|---|---|
+| ResNet-50, 8×3×224×224 | 614 ms | +12.6% | +11.7% | **−0.8%** (noise) | 6 | 2.5% |
+| Transformer LM, 4×255 tokens | 506 ms | +10.0% | +6.6% | **+1.7%** | 4 | 2.6% |
+| MLP, batch 512 | 213 ms | +10.9% | +12.0% | **+2.7%** | 4 | 2.7% |
+
+**One finding on a healthy workload, investigated and fixed.** The CPU run reported a `dead_relu` warning on
+ResNet-50. From step 14, 55–90% of the units of `layer4.2.relu` were zero for every sample. That measurement is
+correct for this setup: the benchmark trains on one fixed random batch, and on CPU that batch has only 8
+images. But "zero for all 8 images of the same batch" is weak evidence that a unit is dead. The GPU run, with
+16 images per batch, reported nothing. `dead_unit_frac` is therefore now measured only for batches of at
+least 16 samples. A fully dead layer is still caught at any batch size by the Module 0 90%-zeros rule. After
+the change, the same 25-step CPU run reports no finding. The raw JSON above is from the run before the fix and
+still lists the warning. Every other healthy workload in both runs produced no finding.
+
+### 3.4 Where the time goes (PyTorch profiler, ResNet-50)
 
 The profiler records 15,475 operators in a monitored step against 3,576 for training alone. Most of the
 added ones are free view/slice bookkeeping; the kernels that do work are the copies into the staging buffers,

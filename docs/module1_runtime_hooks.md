@@ -81,7 +81,7 @@ buffer the hooks allocated (weight samples, pinned host buffers), so nothing sta
 **`activation_stats` keys per layer:**
 - The contract's keys: `mean`, `std`, `nan_count`, `inf_count`, `zero_frac`.
 - Distribution extras: `min`, `max`, `abs_mean`, `saturated_frac` (tanh/sigmoid layers: fraction at |y|≥0.99, or y≤0.01 / y≥0.99), `norm`, `numel`, `calls`.
-- `dead_unit_frac` (ReLU / ReLU6 layers only): the fraction of units, meaning every non-batch position, that are zero for every sample in the batch. A partly dead layer keeps its overall `zero_frac` below the 90% `activation_health` threshold, but this shows the dead units. Added for the Runtime Monitor Agent.
+- `dead_unit_frac` (ReLU / ReLU6 layers, batches of at least 16 samples): the fraction of units, meaning every non-batch position, that are zero for every sample in the batch. With fewer samples, "zero for every sample" is weak evidence, so it is not measured. A partly dead layer keeps its overall `zero_frac` below the 90% `activation_health` threshold, but this shows the dead units. Added for the Runtime Monitor Agent.
 - Gradient flowing back through the layer, from a backward hook on its output: `grad_norm`, `grad_abs_mean`, `grad_abs_max`, `grad_nan_count`, `grad_inf_count`.
 
 **`extra` (training snapshots):**

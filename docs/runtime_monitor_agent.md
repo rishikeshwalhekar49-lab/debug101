@@ -110,8 +110,8 @@ report = session.report()
      - loss divergence (median doubled, with the whole recent window above the earlier level, so noise does not
        trigger it);
      - **dead units:** `dead_unit_frac` ≥ 50% for 5 snapshots. This is a new hook statistic: the fraction of
-       ReLU units that are zero for every sample. It catches partly dead layers that the 90% `zero_frac`
-       threshold misses;
+       ReLU units that are zero for every sample (measured for batches of at least 16 samples). It catches
+       partly dead layers that the 90% `zero_frac` threshold misses;
      - update ratio ‖ΔW‖/‖W‖ far too high or far too low (package101 `UpdateRatioSane`).
 6. **Aggregate and confirm.** `AlertDispatcher` (`runtime/alerts.py`) folds the signals into **one alert per bug
    per channel**, recording first and last step, count per rule (once per snapshot), peak, offenders, and a trace
