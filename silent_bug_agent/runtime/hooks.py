@@ -10,7 +10,8 @@ Sensors (all removable with :meth:`RuntimeHooks.detach`):
 * **forward hooks** on every leaf layer (plus ``nn.MultiheadAttention`` and RNN
   modules as units) -> ``activation_stats``: the contract keys ``mean``, ``std``,
   ``nan_count``, ``inf_count``, ``zero_frac`` plus ``min``, ``max``, ``abs_mean``,
-  ``saturated_frac`` (tanh/sigmoid), ``norm``, ``numel``, ``calls``;
+  ``saturated_frac`` (tanh/sigmoid), ``dead_unit_frac`` (ReLU layers: fraction of
+  units that output zero for every sample in the batch), ``norm``, ``numel``, ``calls``;
 * **backward (tensor) hooks** on each layer's output -> gradient flowing back
   through the layer: ``grad_norm``, ``grad_abs_mean``, ``grad_abs_max``,
   ``grad_nan_count``, ``grad_inf_count`` inside the same ``activation_stats`` entry;
@@ -27,10 +28,13 @@ parameters are keyed by their ``named_parameters()`` name.
 
 Low-overhead streaming (adapted from package101 ``trainmedic/detect/tracer.py``):
 
-* statistics are computed on the tensor's own device (GPU or CPU) from *views*;
-  activations are never copied or moved. Tensors above ``max_elems`` (default
-  65,536) are sampled with a strided view, and one extra reduction over the
-  whole tensor still catches any NaN/Inf outside the sample;
+* statistics are computed on the tensor's own device (GPU or CPU). A hook only
+  copies a strided sample of its tensor (at most ``max_elems``, default 16,384
+  elements) into its row of a staging buffer allocated once; when the tensor is
+  larger, one extra reduction over the whole tensor still catches any NaN/Inf
+  outside the sample. At the end of the step the statistics of *all* layers are
+  computed together in a few dozen batched kernels, and parameter norms use fused
+  multi-tensor kernels: on a GPU, kernel launches, not arithmetic, are the cost;
 * hooks never synchronise with the GPU. At the end of a monitored step every
   statistic is packed into one small device vector, copied to the host once and
   asynchronously into a reused pinned buffer, and turned into a TrainingState
@@ -61,7 +65,8 @@ from ..invariants.base import Invariant, InvariantResult, TrainingState
 from ..invariants.registry import run_all
 from .numerics import EmaZScore
 
-ACT_FIELDS = ("mean", "std", "min", "max", "abs_mean", "zero_frac", "saturated_frac", "norm", "nan_count", "inf_count")
+ACT_FIELDS = ("mean", "std", "min", "max", "abs_mean", "zero_frac", "saturated_frac", "norm", "nan_count", "inf_count",
+              "dead_unit_frac")
 GRAD_FIELDS = ("grad_norm", "grad_abs_mean", "grad_abs_max", "grad_nan_count", "grad_inf_count")
 PARAM_FIELDS = ("grad_norm", "grad_abs_max", "weight_norm", "delta_norm")
 
@@ -88,6 +93,8 @@ def module_label(name: str, module: nn.Module) -> str:
 
 
 def _saturation_kind(module: nn.Module) -> str:
+    if isinstance(module, (nn.ReLU, nn.ReLU6)):
+        return "relu"  # no saturation, but units can die: dead_unit_frac is measured
     if isinstance(module, (nn.Tanh, nn.Hardtanh)):
         return "tanh"
     if isinstance(module, nn.Sigmoid):
@@ -115,7 +122,7 @@ class TensorStatsExtractor:
     Every method returns a small device tensor and never calls ``.item()``,
     ``float()`` or ``.tolist()``, so a hook never forces a GPU synchronisation."""
 
-    def __init__(self, max_elems: int = 1 << 16, histogram_bins: int = 0) -> None:
+    def __init__(self, max_elems: int = 1 << 14, histogram_bins: int = 0) -> None:
         self.max_elems = max_elems
         self.histogram_bins = histogram_bins
 
@@ -167,7 +174,22 @@ class TensorStatsExtractor:
         else:
             sat = zero
         nan, inf = self._nan_inf(x, f, stride)
-        return torch.stack([mean, std, mn, mx, abs_mean, zero_frac, sat, s2.sqrt() * math.sqrt(stride), nan, inf])
+        dead = self._dead_units(x) if saturation == "relu" else torch.full((), float("nan"), dtype=f.dtype, device=f.device)
+        return torch.stack([mean, std, mn, mx, abs_mean, zero_frac, sat, s2.sqrt() * math.sqrt(stride), nan, inf, dead])
+
+    def _dead_units(self, x: torch.Tensor) -> torch.Tensor:
+        """Fraction of units (all non-batch positions) that are zero for every sample of the batch.
+
+        A dying-ReLU layer is often only partly dead, so its overall ``zero_frac`` stays
+        below the 90% activation_health threshold while many units never fire. Units are
+        sampled with a strided view (columns) like the other statistics."""
+        if x.dim() < 2 or x.shape[0] < 2:
+            return torch.full((), float("nan"), dtype=torch.float32, device=x.device)
+        u = x.detach().reshape(x.shape[0], -1)
+        stride = max(1, math.ceil(u.numel() / self.max_elems))
+        if stride > 1:
+            u = u[:, ::stride]
+        return (u.abs().amax(dim=0) == 0).float().mean()
 
     def gradient(self, g: torch.Tensor) -> torch.Tensor:
         f, stride = self.sample(g)
@@ -179,6 +201,49 @@ class TensorStatsExtractor:
         nan, inf = self._nan_inf(g, f, stride)
         return torch.stack([norm, z.sum() / n.clamp_min(1.0), z.amax(), nan, inf])
 
+    # ------------------------------------------------- batched: every layer at once
+    @staticmethod
+    def _batch_nan_inf(st: "_Staging") -> Tuple[torch.Tensor, torch.Tensor]:
+        nan = (torch.isnan(st.buf) & st.valid).sum(1) * st.ratio
+        inf = (torch.isinf(st.buf) & st.valid).sum(1) * st.ratio
+        # a NaN/Inf outside the sample still shows in the full-tensor sum taken by the hook
+        nan = torch.where(st.sampled & torch.isnan(st.full) & (nan == 0), 1.0, nan)
+        inf = torch.where(st.sampled & torch.isinf(st.full) & (inf == 0), 1.0, inf)
+        return nan, inf
+
+    def batch_activation(self, st: "_Staging", kinds: torch.Tensor, dead: torch.Tensor) -> torch.Tensor:
+        """``ACT_FIELDS`` of every layer from the staged samples, ``[layers, len(ACT_FIELDS)]``.
+
+        Same definitions as :meth:`activation`, in a few dozen kernels for the whole model
+        instead of ~25 per layer (kernel launches, not arithmetic, dominate hook cost on a GPU)."""
+        buf = st.buf
+        finite = torch.isfinite(buf) & st.valid
+        nf = finite.sum(1).to(buf.dtype).clamp_min(1.0)
+        z = torch.where(finite, buf, 0.0)
+        s2 = (z * z).sum(1)
+        mean = z.sum(1) / nf
+        std = (s2 / nf - mean * mean).clamp_min(0).sqrt()
+        mn = torch.where(finite, buf, float("inf")).amin(1)
+        mx = torch.where(finite, buf, float("-inf")).amax(1)
+        az = z.abs()
+        abs_mean = az.sum(1) / nf
+        zero_frac = ((buf == 0) & finite).sum(1) / nf
+        sat_tanh = (az >= 0.99).sum(1) / nf
+        sat_sigmoid = (((z <= 0.01) | (z >= 0.99)) & finite).sum(1) / nf
+        sat = torch.where(kinds == 1, sat_tanh, torch.where(kinds == 2, sat_sigmoid, torch.zeros_like(sat_tanh)))
+        nan, inf = self._batch_nan_inf(st)
+        norm = s2.sqrt() * st.ratio.sqrt()
+        return torch.stack([mean, std, mn, mx, abs_mean, zero_frac, sat, norm, nan, inf, dead], 1)
+
+    def batch_gradient(self, st: "_Staging") -> torch.Tensor:
+        """``GRAD_FIELDS`` of every layer from the staged gradient samples, ``[layers, len(GRAD_FIELDS)]``."""
+        finite = torch.isfinite(st.buf) & st.valid
+        n = finite.sum(1).clamp_min(1)
+        z = torch.where(finite, st.buf, 0.0).abs()
+        norm = (z * z).sum(1).sqrt() * st.ratio.sqrt()
+        nan, inf = self._batch_nan_inf(st)
+        return torch.stack([norm, z.sum(1) / n, z.amax(1), nan, inf], 1)
+
     def histogram(self, x: torch.Tensor) -> torch.Tensor:
         """Normalised histogram over the tensor's own [min, max] (edges = the min/max stats)."""
         f, _ = self.sample(x)
@@ -186,6 +251,79 @@ class TensorStatsExtractor:
         f = torch.where(torch.isfinite(f), f, torch.zeros((), dtype=f.dtype, device=f.device))
         h = torch.histc(f, bins=self.histogram_bins, min=0, max=0)
         return h / h.sum().clamp_min(1.0)
+
+
+class _Staging:
+    """One step's samples of every layer, for batched statistics.
+
+    A hook copies a strided sample of its tensor (at most ``width`` elements; the
+    batch dimension is kept so dead units can be measured) into its own row of a
+    buffer that is allocated once -- one kernel -- and, when the tensor is
+    sampled, one reduction over the whole tensor so a NaN/Inf outside the sample
+    is still caught. :meth:`prepare` builds the row masks (cached per shape)."""
+
+    def __init__(self, n_rows: int, width: int, exact_nonfinite: bool = True) -> None:
+        self.n, self.width, self.exact = n_rows, width, exact_nonfinite
+        self.buf: Optional[torch.Tensor] = None  # [rows, width] float32
+        self.full: Optional[torch.Tensor] = None  # [rows] float32 full-tensor sums
+        self.shape: List[Tuple[int, int]] = [(0, 0)] * n_rows  # (rows, cols) of each sample; 0 = not observed
+        self.numel: List[int] = [0] * n_rows
+        self.valid: Optional[torch.Tensor] = None
+        self.ratio: Optional[torch.Tensor] = None
+        self.sampled: Optional[torch.Tensor] = None
+        self._cache: Dict[Tuple[Any, ...], Tuple[torch.Tensor, torch.Tensor, torch.Tensor]] = {}
+
+    def clear(self) -> None:
+        self.shape = [(0, 0)] * self.n
+        self.numel = [0] * self.n
+
+    def release(self) -> None:
+        self.buf = self.full = self.valid = self.ratio = self.sampled = None
+        self._cache.clear()
+        self.clear()
+
+    def write(self, i: int, x: torch.Tensor) -> None:
+        x = x.detach()
+        if self.buf is None:
+            self.buf = torch.empty(self.n, self.width, dtype=torch.float32, device=x.device)
+            self.full = torch.zeros(self.n, dtype=torch.float32, device=x.device)
+        N, W = x.numel(), self.width
+        if x.dim() >= 2 and 2 <= x.shape[0] <= W // 4:
+            B = x.shape[0]
+            x2 = x.reshape(B, -1)  # a view for contiguous tensors
+            s = math.ceil(B * x2.shape[1] / (W - B)) if x2.numel() > W else 1
+            v = x2[:, ::s] if s > 1 else x2
+        else:
+            flat = x.reshape(-1)
+            s = max(1, math.ceil(N / W))
+            v = (flat[::s] if s > 1 else flat).unsqueeze(0)
+        rows, cols = v.shape
+        self.buf[i, :rows * cols].view(rows, cols).copy_(v)
+        self.shape[i], self.numel[i] = (rows, cols), N
+        if self.exact and rows * cols < N:
+            if x.device == self.full.device:
+                torch.sum(x, dim=tuple(range(x.dim())), dtype=torch.float32, out=self.full[i])
+            else:
+                self.full[i] = x.sum(dtype=torch.float32).to(self.full.device)
+
+    def prepare(self) -> None:
+        key = tuple(self.shape) + tuple(self.numel)
+        hit = self._cache.get(key)
+        if hit is None:
+            dev = self.buf.device
+            n = [r * c for r, c in self.shape]
+            lengths = torch.tensor(n, device=dev)
+            valid = torch.arange(self.width, device=dev)[None, :] < lengths[:, None]
+            ratio = torch.tensor([N / k if k else 1.0 for N, k in zip(self.numel, n)], dtype=torch.float32, device=dev)
+            sampled = torch.tensor([self.exact and 0 < k < N for N, k in zip(self.numel, n)], device=dev)
+            if len(self._cache) >= 16:
+                self._cache.clear()
+            hit = self._cache[key] = (valid, ratio, sampled)
+        self.valid, self.ratio, self.sampled = hit
+
+    def row(self, i: int) -> torch.Tensor:
+        r, c = self.shape[i]
+        return self.buf[i, :r * c].view(r, c)
 
 
 # ================================================================ streaming
@@ -265,11 +403,17 @@ class SnapshotStream:
 
 
 # =============================================================== collectors
+_KIND_CODES = {"": 0, "tanh": 1, "sigmoid": 2, "relu": 3}
+
+
 class ActivationCollector:
-    """Forward hooks (activations) and output-tensor hooks (gradients) on the selected layers."""
+    """Forward hooks (activations) and output-tensor hooks (gradients) on the selected layers.
+
+    A hook only stages a sample of its tensor (:class:`_Staging`); the statistics of
+    all layers are computed together at the end of the step."""
 
     def __init__(self, layers: List[Tuple[str, nn.Module]], extractor: TensorStatsExtractor, *,
-                 track_grads: bool = True, capture_eval: bool = True) -> None:
+                 track_grads: bool = True, capture_eval: bool = True, exact_nonfinite: bool = True) -> None:
         self.layers = layers
         self.labels = [module_label(n, m) for n, m in layers]
         self.saturation = [_saturation_kind(m) for _, m in layers]
@@ -278,15 +422,29 @@ class ActivationCollector:
         self.capture_eval = capture_eval
         self.active = True
         self.handles: List[Any] = []
+        L, W = len(layers), extractor.max_elems
+        self.stages = {k: _Staging(L, W, exact_nonfinite) for k in ("train", "eval", "grad")}
+        self._kinds: Dict[str, torch.Tensor] = {}
+        self._nan: Dict[str, torch.Tensor] = {}
         self.reset("train")
         self.reset("eval")
 
     def reset(self, phase: str) -> None:
-        tables = {"act": {}, "grad": {}, "hist": {}, "calls": {}, "numel": {}}
+        tables: Dict[str, Any] = {"act": set(), "grad": set(), "calls": {}, "numel": {}}
         if phase == "train":
             self.train = tables
+            self.stages["train"].clear()
+            self.stages["grad"].clear()
         else:
             self.eval = tables
+            self.stages["eval"].clear()
+
+    def release(self) -> None:
+        """Free the staging buffers (re-allocated lazily)."""
+        for st in self.stages.values():
+            st.release()
+        self._kinds.clear()
+        self._nan.clear()
 
     def attach(self) -> None:
         for i, (_name, module) in enumerate(self.layers):
@@ -310,9 +468,8 @@ class ActivationCollector:
             return
         tab = self.train if training_pass else self.eval
         with torch.no_grad():
-            tab["act"][i] = self.extractor.activation(t, self.saturation[i])
-            if self.extractor.histogram_bins:
-                tab["hist"][i] = self.extractor.histogram(t)
+            self.stages["train" if training_pass else "eval"].write(i, t)
+        tab["act"].add(i)
         tab["calls"][i] = tab["calls"].get(i, 0) + 1
         tab["numel"][i] = t.numel()
         if training_pass and self.track_grads and t.requires_grad:
@@ -321,15 +478,65 @@ class ActivationCollector:
     def _on_grad(self, i: int, g: torch.Tensor) -> None:
         if self.active and g is not None:
             with torch.no_grad():
-                self.train["grad"][i] = self.extractor.gradient(g)
+                self.stages["grad"].write(i, g)
+            self.train["grad"].add(i)
         return None  # never modifies the gradient
+
+    # ------------------------------------------------- end of step: all layers at once
+    def _kind_codes(self, dev: torch.device) -> torch.Tensor:
+        key = str(dev)
+        if key not in self._kinds:
+            self._kinds[key] = torch.tensor([_KIND_CODES[k] for k in self.saturation], device=dev)
+        return self._kinds[key]
+
+    def _dead_units(self, st: _Staging, observed: set) -> torch.Tensor:
+        """dead_unit_frac per layer (NaN for non-ReLU layers): units zero for every sample of the batch."""
+        dev = st.buf.device
+        key = str(dev)
+        if key not in self._nan:
+            self._nan[key] = torch.full((), float("nan"), device=dev)
+        nan = self._nan[key]
+        vals = []
+        for i, kind in enumerate(self.saturation):
+            if kind == "relu" and i in observed and st.shape[i][0] >= 2:
+                vals.append((st.row(i).abs().amax(0) == 0).float().mean())
+            else:
+                vals.append(nan)
+        return torch.stack(vals)
+
+    def activation_stats(self, phase: str) -> Optional[torch.Tensor]:
+        tab = self.train if phase == "train" else self.eval
+        st = self.stages[phase]
+        if not tab["act"] or st.buf is None:
+            return None
+        st.prepare()
+        return self.extractor.batch_activation(st, self._kind_codes(st.buf.device), self._dead_units(st, tab["act"]))
+
+    def gradient_stats(self) -> Optional[torch.Tensor]:
+        st = self.stages["grad"]
+        if not self.train["grad"] or st.buf is None:
+            return None
+        st.prepare()
+        return self.extractor.batch_gradient(st)
+
+    def histograms(self, phase: str) -> Dict[int, torch.Tensor]:
+        tab = self.train if phase == "train" else self.eval
+        st, bins, out = self.stages[phase], self.extractor.histogram_bins, {}
+        for i in sorted(tab["act"]):
+            row = st.row(i).reshape(-1)
+            f = torch.where(torch.isfinite(row), row, 0.0)
+            h = torch.histc(f, bins=bins, min=0, max=0)
+            out[i] = h / h.sum().clamp_min(1.0)
+        return out
 
 
 class ParameterCollector:
     """Optimizer-step hooks: per-parameter gradient norms, weight norms and weight deltas.
 
     Tracks every named parameter of the model (not only those given to the
-    optimizer), so a trainable layer left out of the optimizer shows a zero delta."""
+    optimizer), so a trainable layer left out of the optimizer shows a zero delta.
+    Uses fused multi-tensor (``torch._foreach_*``) kernels, so the cost is a handful
+    of launches per step whatever the number of parameters."""
 
     def __init__(self, named_params: List[Tuple[str, nn.Parameter]], max_elems: int = 1 << 20) -> None:
         self.names = [n for n, _ in named_params]
@@ -337,13 +544,12 @@ class ParameterCollector:
         self.max_elems = max_elems
         self._shadow: List[Optional[torch.Tensor]] = [None] * len(self.params)
         self._strides = [1] * len(self.params)
-        self._pre: Optional[Tuple[List[torch.Tensor], List[torch.Tensor], List[torch.Tensor]]] = None
+        self._scale: Optional[torch.Tensor] = None  # sqrt(stride) per parameter
+        self._pre: Optional[Tuple[torch.Tensor, torch.Tensor, torch.Tensor]] = None
         self.last_has_grad: List[bool] = [False] * len(self.params)
         self._captured = False
         self.device: Optional[torch.device] = self.params[0].device if self.params else None
-
-    def _to_dev(self, t: torch.Tensor) -> torch.Tensor:
-        return t if self.device is None or t.device == self.device else t.to(self.device, non_blocking=True)
+        self._fused = len({p.device for p in self.params}) <= 1  # foreach kernels need one device
 
     def _sample(self, i: int, t: torch.Tensor) -> torch.Tensor:
         flat = t.detach()
@@ -351,67 +557,144 @@ class ParameterCollector:
         s = self._strides[i]
         return flat[::s] if s > 1 else flat
 
+    def _norms(self, ts: List[torch.Tensor], ord: float = 2.0) -> torch.Tensor:
+        """L2 norm (``ord=2``) or max |x| (``ord=inf``) of each tensor, as one float32 vector.
+
+        CUDA uses the fused ``torch._foreach_norm``. On CPU and MPS per-tensor dot
+        products / multiply-and-sum are much faster (MPS's norm kernel is ~20x slower
+        than a multiply-and-sum; measured in docs/overhead_benchmark.md)."""
+        if not ts:
+            return torch.empty(0, device=self.device)
+        kind = self.device.type if self.device is not None else "cpu"
+        if self._fused and kind == "cuda":
+            out = torch._foreach_norm(ts, ord)
+            return torch.stack([t if t.dtype == torch.float32 else t.float() for t in out])
+        vals = []
+        for t in ts:
+            f = t.reshape(-1)
+            if f.dtype not in (torch.float32, torch.float64):
+                f = f.float()
+            if ord == 2.0:
+                v = torch.dot(f, f) if kind == "cpu" else (f * f).sum()
+            else:
+                v = f.abs().amax() if f.numel() else torch.zeros((), device=f.device)
+            vals.append(v if self._fused else v.to(self.device))
+        out = torch.stack([v if v.dtype == torch.float32 else v.float() for v in vals])
+        return out.sqrt() if ord == 2.0 else out
+
     @torch.no_grad()
     def norms(self) -> None:
-        """Per-parameter gradient norm, gradient |max| (on the sample) and weight norm."""
-        nan = torch.full((), float("nan"), device=self.device)
-        grads = [p.grad for p in self.params if p.grad is not None]
+        """Per-parameter gradient L2 norm and max |gradient| (exact), and weight norm."""
         self.last_has_grad = [p.grad is not None for p in self.params]
-        g_norms = iter(torch._foreach_norm(grads)) if grads else iter(())
-        w_norms = torch._foreach_norm([p.detach() for p in self.params]) if self.params else []
-        gnorm: List[torch.Tensor] = []
-        gmax: List[torch.Tensor] = []
-        wnorm: List[torch.Tensor] = []
+        grads = [p.grad.detach() for p in self.params if p.grad is not None]
         for i, p in enumerate(self.params):
             self._ensure_shadow(i, p)
-            if p.grad is not None:
-                gnorm.append(self._to_dev(next(g_norms).float()))  # exact (fused foreach norm)
-                gmax.append(self._to_dev(self._sample(i, p.grad).abs().amax().float()))
-            else:
-                gnorm.append(nan)
-                gmax.append(nan)
-            wnorm.append(self._to_dev(w_norms[i].float()))
-        self._pre = (gnorm, gmax, wnorm)
+        self._pre = (self._norms(grads), self._norms(grads, float("inf")),
+                     self._norms([p.detach() for p in self.params]))
 
     def _ensure_shadow(self, i: int, p: torch.Tensor) -> None:
         if self._shadow[i] is None:
             self._strides[i] = max(1, math.ceil(p.numel() / self.max_elems))
             self._shadow[i] = torch.empty_like(self._sample(i, p))
+            self._scale = None
 
     @torch.no_grad()
     def capture(self) -> None:
         """Remember the current weights (a strided sample, into buffers allocated once)."""
         for i, p in enumerate(self.params):
             self._ensure_shadow(i, p)
-            self._shadow[i].copy_(self._sample(i, p))  # the only weight copy
+        samples = [self._sample(i, p) for i, p in enumerate(self.params)]
+        if samples and self._fused and hasattr(torch, "_foreach_copy_"):
+            torch._foreach_copy_(self._shadow, samples)  # the only weight copy
+        else:
+            for buf, smp in zip(self._shadow, samples):
+                buf.copy_(smp)
         self._captured = True
 
     def before_step(self) -> None:
         self.norms()
         self.capture()
 
+    def release(self) -> None:
+        """Free the weight-sample buffers (re-allocated lazily if monitoring resumes)."""
+        self._shadow = [None] * len(self.params)
+        self._scale = None
+        self._pre = None
+        self._captured = False
+
     @torch.no_grad()
     def after_step(self) -> torch.Tensor:
-        """Rows of PARAM_FIELDS; the delta is measured against the last capture()."""
+        """``[grad_norm..., grad_abs_max...]`` for the parameters with a gradient, then ``[weight_norm..., delta_norm...]``
+        for every parameter; the delta is measured against the last capture()."""
         if self._pre is None:
             self.norms()
         gnorm, gmax, wnorm = self._pre  # type: ignore[misc]
-        if self._captured:
-            deltas = []
-            for i, p in enumerate(self.params):
-                buf = self._shadow[i]
-                buf.sub_(self._sample(i, p))  # in place: old - new
-                deltas.append(buf)
-            d_norms = torch._foreach_norm(deltas) if deltas else []
-            dnorm = [self._to_dev(d.float()) * math.sqrt(self._strides[i]) for i, d in enumerate(d_norms)]
+        P = len(self.params)
+        if self._captured and P:
+            samples = [self._sample(i, p) for i, p in enumerate(self.params)]
+            if self._fused:
+                torch._foreach_sub_(self._shadow, samples)  # in place: old - new
+            else:
+                for buf, smp in zip(self._shadow, samples):
+                    buf.sub_(smp)
+            if self._scale is None:
+                self._scale = torch.tensor([math.sqrt(s) for s in self._strides], dtype=torch.float32,
+                                           device=self.device)
+            dnorm = self._norms(self._shadow) * self._scale  # type: ignore[arg-type]
         else:
-            nan = torch.full((), float("nan"), device=self.device)
-            dnorm = [nan for _ in self.params]
+            dnorm = torch.full((P,), float("nan"), device=self.device)
         self._pre = None
         self._captured = False
-        if not self.params:
-            return torch.empty(0, len(PARAM_FIELDS))
-        return torch.stack([torch.stack(gnorm), torch.stack(gmax), torch.stack(wnorm), torch.stack(dnorm)], dim=1)
+        return torch.cat([gnorm, gmax, wnorm, dnorm])
+
+
+class _BackwardPatch:
+    """One shared ``torch.Tensor.backward`` wrapper for every active :class:`LossCollector`.
+
+    Collectors register and unregister in any order (several models, e.g. a GAN,
+    or nested sessions); the original method is restored when the last one leaves,
+    and only if nobody else has patched ``backward`` on top of us since."""
+
+    lock = threading.Lock()
+    collectors: List["LossCollector"] = []
+    orig: Any = None
+    wrapper: Any = None
+    local = threading.local()
+
+    @classmethod
+    def add(cls, c: "LossCollector") -> None:
+        with cls.lock:
+            if c not in cls.collectors:
+                cls.collectors.append(c)
+            if cls.wrapper is None or torch.Tensor.backward is not cls.wrapper:
+                cls.orig = torch.Tensor.backward
+                cls.wrapper = cls._make(cls.orig)
+                torch.Tensor.backward = cls.wrapper  # type: ignore[assignment]
+
+    @classmethod
+    def remove(cls, c: "LossCollector") -> None:
+        with cls.lock:
+            if c in cls.collectors:
+                cls.collectors.remove(c)
+            if not cls.collectors and cls.wrapper is not None and torch.Tensor.backward is cls.wrapper:
+                torch.Tensor.backward = cls.orig  # type: ignore[assignment]
+                cls.orig = cls.wrapper = None
+
+    @classmethod
+    def _make(cls, orig: Any) -> Any:
+        def backward(t, *a, **kw):  # type: ignore[no-untyped-def]
+            nested = getattr(cls.local, "inside", False)  # backward() called from inside a backward pass
+            if not nested and cls.collectors and not _compiling() and t.numel() == 1 and t.is_floating_point():
+                v = t.detach().reshape(()).float()
+                for c in list(cls.collectors):
+                    c.values.append(v)
+            cls.local.inside = True
+            try:
+                return orig(t, *a, **kw)
+            finally:
+                cls.local.inside = nested
+
+        return backward
 
 
 class LossCollector:
@@ -419,30 +702,17 @@ class LossCollector:
 
     def __init__(self) -> None:
         self.values: List[torch.Tensor] = []
-        self._orig: Any = None
-        self._in = False
+        self._installed = False
 
     def install(self) -> None:
-        if self._orig is not None:
-            return
-        self._orig = torch.Tensor.backward
-        orig, coll = self._orig, self
-
-        def backward(t, *a, **kw):  # type: ignore[no-untyped-def]
-            if not coll._in and not _compiling() and t.numel() == 1 and t.is_floating_point():
-                coll.values.append(t.detach().reshape(()).float())
-            coll._in = True
-            try:
-                return orig(t, *a, **kw)
-            finally:
-                coll._in = False
-
-        torch.Tensor.backward = backward  # type: ignore[assignment]
+        if not self._installed:
+            _BackwardPatch.add(self)
+            self._installed = True
 
     def uninstall(self) -> None:
-        if self._orig is not None:
-            torch.Tensor.backward = self._orig  # type: ignore[assignment]
-            self._orig = None
+        if self._installed:
+            _BackwardPatch.remove(self)
+            self._installed = False
 
     def observe(self, loss: Union[torch.Tensor, float]) -> None:
         if isinstance(loss, torch.Tensor):
@@ -457,12 +727,15 @@ class HookConfig:
     every_n_steps: int = 1
     layers: Union[str, Callable[[str, nn.Module], bool]] = "auto"  # "auto" or a predicate(name, module)
     max_layers: int = 256
-    max_elems: int = 1 << 16  # per activation/gradient; larger tensors are sampled (strided view)
+    max_elems: int = 1 << 14  # per activation/gradient sample; larger tensors are sampled (strided view)
     max_param_elems: int = 1 << 20  # per weight tensor, for the weight-delta sample
     histogram_bins: int = 0  # > 0 adds normalised histograms to extra["histograms"]
     track_activation_grads: bool = True
     capture_backward_loss: bool = True
     eval_snapshots: str = "first"  # "first" per validation phase | "every" no-grad forward | "off"
+    # "exact": one extra reduction over every sampled tensor, so a NaN/Inf anywhere is counted;
+    # "sampled": only inside the sample (cheaper on GPUs; NaN usually spreads to the sample within a layer or two)
+    nonfinite_check: str = "exact"
     max_loss_history: Optional[int] = 10_000  # loss values kept in loss_history (None = all)
     stream_capacity: int = 1024
     max_pending: int = 4  # device-to-host copies allowed in flight before waiting
@@ -526,7 +799,8 @@ class RuntimeHooks:
         self.extractor = TensorStatsExtractor(self.config.max_elems, self.config.histogram_bins)
         self.layers = select_layers(model, self.config.layers, self.config.max_layers)
         self.acts = ActivationCollector(self.layers, self.extractor, track_grads=self.config.track_activation_grads,
-                                        capture_eval=self.config.eval_snapshots != "off")
+                                        capture_eval=self.config.eval_snapshots != "off",
+                                        exact_nonfinite=self.config.nonfinite_check != "sampled")
         named = [(n.replace("_orig_mod.", ""), p) for n, p in model.named_parameters()]
         seen = {id(p) for _, p in named}
         if optimizer is not None:
@@ -538,6 +812,7 @@ class RuntimeHooks:
         self._loss_det = EmaZScore(alpha=0.05, warmup=self.config.loss_warmup, z=self.config.loss_z)
         self._handles: List[Any] = []
         self._steps_done = 0
+        self._paused = False
         self._attached = False
         self._eval_taken = False
         self._pending: Deque[Tuple[Any, torch.Tensor, Dict[str, Any]]] = deque()
@@ -551,7 +826,25 @@ class RuntimeHooks:
         return self._steps_done
 
     def _monitoring(self) -> bool:
-        return self._steps_done % max(1, self.config.every_n_steps) == 0
+        return not self._paused and self._steps_done % max(1, self.config.every_n_steps) == 0
+
+    @property
+    def paused(self) -> bool:
+        return self._paused
+
+    def pause(self) -> None:
+        """Stop monitoring from the next step on (hooks stay installed and cost almost nothing)."""
+        self._paused = True
+        self.acts.active = False
+
+    def resume(self) -> None:
+        self._paused = False
+        self.acts.active = self._monitoring()
+
+    def set_every_n_steps(self, n: int) -> None:
+        """Change the monitoring rate while attached (used by the overhead governor)."""
+        self.config.every_n_steps = max(1, int(n))
+        self.acts.active = self._monitoring()
 
     def attach(self) -> "RuntimeHooks":
         if self._attached:
@@ -570,6 +863,7 @@ class RuntimeHooks:
         return self
 
     def detach(self) -> None:
+        """Remove every hook and free every device buffer the hooks allocated (no memory is held after this)."""
         if not self._attached:
             return
         self.flush()
@@ -579,6 +873,13 @@ class RuntimeHooks:
             h.remove()
         self._handles.clear()
         self._attached = False
+        self.param_coll.release()
+        self.acts.reset("train")
+        self.acts.reset("eval")
+        self.acts.release()
+        self.losses.values.clear()
+        self._free.clear()
+        self._nan_rows.clear()
 
     def __enter__(self) -> "RuntimeHooks":
         return self.attach()
@@ -635,9 +936,9 @@ class RuntimeHooks:
     def _device(self) -> torch.device:
         if self.param_coll.device is not None:
             return self.param_coll.device
-        for tab in (self.acts.train, self.acts.eval):
-            for t in tab["act"].values():
-                return t.device
+        for st in self.acts.stages.values():
+            if st.buf is not None:
+                return st.buf.device
         return torch.device("cpu")
 
     def _nan_row(self, n: int, dev: torch.device) -> torch.Tensor:
@@ -646,28 +947,34 @@ class RuntimeHooks:
             self._nan_rows[key] = torch.full((n,), float("nan"), device=dev)
         return self._nan_rows[key]
 
-    def _rows(self, table: Dict[int, torch.Tensor], width: int, dev: torch.device) -> torch.Tensor:
+    def _block(self, stats: Optional[torch.Tensor], width: int, dev: torch.device) -> torch.Tensor:
         L = len(self.layers)
         if L == 0 or width == 0:
             return torch.empty(0, device=dev)
-        rows = [table[i] if i in table else self._nan_row(width, dev) for i in range(L)]
-        rows = [r if r.device == dev else r.to(dev, non_blocking=True) for r in rows]
-        return torch.stack(rows).reshape(-1)
+        if stats is None:
+            return self._nan_row(L * width, dev)
+        stats = stats.reshape(-1)
+        return stats if stats.device == dev else stats.to(dev, non_blocking=True)
 
-    def _finalize(self, phase: str, param_rows: Optional[torch.Tensor]) -> None:
+    def _finalize(self, phase: str, param_vec: Optional[torch.Tensor]) -> None:
         dev = self._device()
         tab = self.acts.train if phase == "train" else self.acts.eval
         bins = self.extractor.histogram_bins
+        hist_rows: Dict[int, torch.Tensor] = {}
         with torch.no_grad():
             losses = [v if v.device == dev else v.to(dev, non_blocking=True) for v in self.losses.values]
             loss = torch.stack(losses).mean().reshape(1) if (losses and phase == "train") else self._nan_row(1, dev)
             parts = [
                 loss,
-                self._rows(tab["act"], len(ACT_FIELDS), dev),
-                self._rows(tab["grad"], len(GRAD_FIELDS), dev),
-                self._rows(tab["hist"], bins, dev) if bins else torch.empty(0, device=dev),
-                param_rows.to(dev).reshape(-1).float() if param_rows is not None else torch.empty(0, device=dev),
+                self._block(self.acts.activation_stats(phase), len(ACT_FIELDS), dev),
+                self._block(self.acts.gradient_stats() if phase == "train" else None, len(GRAD_FIELDS), dev),
             ]
+            if bins:
+                hist_rows = self.acts.histograms(phase)
+                parts.append(torch.cat([hist_rows[i].to(dev) if i in hist_rows else self._nan_row(bins, dev)
+                                        for i in range(len(self.layers))]) if self.layers else torch.empty(0, device=dev))
+            if param_vec is not None:
+                parts.append(param_vec.to(dev).float())
             packed = torch.cat(parts)
         host = self._host_buffer(packed)
         host.copy_(packed, non_blocking=packed.is_cuda)
@@ -684,8 +991,8 @@ class RuntimeHooks:
             "numel": dict(tab["numel"]),
             "has_act": set(tab["act"]),
             "has_grad": set(tab["grad"]),
-            "has_hist": set(tab["hist"]),
-            "has_params": param_rows is not None,
+            "has_hist": set(hist_rows),
+            "has_params": param_vec is not None,
             "has_param_grad": list(self.param_coll.last_has_grad),
             "lrs": [float(g.get("lr", float("nan"))) for g in self.optimizer.param_groups] if self.optimizer else [],
             "module_modes": {module_label(n.replace("_orig_mod.", "").replace("_orig_mod", ""), m):
@@ -757,6 +1064,8 @@ class RuntimeHooks:
             st: Dict[str, float] = {"calls": float(meta["calls"].get(i, 0)), "numel": float(meta["numel"].get(i, 0))}
             if i in meta["has_act"]:
                 st.update(zip(ACT_FIELDS, act[i * len(ACT_FIELDS): (i + 1) * len(ACT_FIELDS)]))
+                if st["dead_unit_frac"] != st["dead_unit_frac"]:  # NaN: not a ReLU layer, not measured
+                    del st["dead_unit_frac"]
             if i in meta["has_grad"]:
                 st.update(zip(GRAD_FIELDS, grd[i * len(GRAD_FIELDS): (i + 1) * len(GRAD_FIELDS)]))
             activation_stats[label] = st
@@ -768,13 +1077,17 @@ class RuntimeHooks:
         weight_norms: Dict[str, float] = {}
         grad_abs_max: Dict[str, float] = {}
         if meta["has_params"]:
+            has, P = meta["has_param_grad"], len(self.param_coll.names)
+            ng = sum(has)
+            gnv, gmv, wnv, dnv = prm[:ng], prm[ng:2 * ng], prm[2 * ng:2 * ng + P], prm[2 * ng + P:2 * ng + 2 * P]
+            k = 0
             for j, name in enumerate(self.param_coll.names):
-                gn, gm, wn, dn = prm[j * 4: j * 4 + 4]
-                if meta["has_param_grad"][j]:
-                    grad_norms[name] = gn  # NaN/Inf kept as-is: the gradient invariant flags them
-                    grad_abs_max[name] = gm
-                weight_deltas[name] = dn
-                weight_norms[name] = wn
+                if has[j]:
+                    grad_norms[name] = gnv[k]  # NaN/Inf kept as-is: the gradient invariant flags them
+                    grad_abs_max[name] = gmv[k]
+                    k += 1
+                weight_deltas[name] = dnv[j]
+                weight_norms[name] = wnv[j]
 
         extra: Dict[str, Any] = {"source": "silent_bug_agent.runtime.hooks", "wall_time": meta["wall_time"],
                                  "lrs": meta["lrs"]}

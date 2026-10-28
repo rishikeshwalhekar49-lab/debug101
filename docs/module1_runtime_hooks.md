@@ -60,13 +60,17 @@ hooks.latest                        # newest TrainingState
 Without an optimizer (manual weight updates), call `hooks.end_step()` after each update. To report a loss
 explicitly, call `hooks.observe_loss(loss)`; otherwise losses are captured from `backward()` automatically.
 
+The monitoring rate can change while attached: `hooks.set_every_n_steps(n)`, `hooks.pause()` and `hooks.resume()`
+(the Runtime Monitor Agent's overhead governor uses them). `detach()` removes every hook and also frees every device
+buffer the hooks allocated (weight samples, pinned host buffers), so nothing stays in GPU memory after it.
+
 ## What goes into `TrainingState`
 
 | field | how it is filled |
 |---|---|
 | `step` | number of optimizer steps completed (1 for the first step) |
 | `loss_history` | every scalar passed to `backward()` (mean per step), most recent `max_loss_history` (10,000) values |
-| `grad_norms` | `{param: L2 norm of its gradient}` taken just before `optimizer.step()` (fused `torch._foreach_norm`, exact) |
+| `grad_norms` | `{param: L2 norm of its gradient}` taken just before `optimizer.step()` (exact; fused `torch._foreach_norm` on CUDA, per-tensor dot products on CPU/MPS) |
 | `weight_deltas` | `{param: ||W_after - W_before||}` for that step. Covers *every* model parameter, so a trainable layer left out of the optimizer shows `0.0` |
 | `requires_grad` | `{param: bool}` |
 | `activation_stats` | `{"name[Class]": {...}}` from forward hooks on every leaf layer (see below) |
@@ -77,12 +81,13 @@ explicitly, call `hooks.observe_loss(loss)`; otherwise losses are captured from 
 **`activation_stats` keys per layer:**
 - The contract's keys: `mean`, `std`, `nan_count`, `inf_count`, `zero_frac`.
 - Distribution extras: `min`, `max`, `abs_mean`, `saturated_frac` (tanh/sigmoid layers: fraction at |y|≥0.99, or y≤0.01 / y≥0.99), `norm`, `numel`, `calls`.
+- `dead_unit_frac` (ReLU / ReLU6 layers only): the fraction of units, meaning every non-batch position, that are zero for every sample in the batch. A partly dead layer keeps its overall `zero_frac` below the 90% `activation_health` threshold, but this shows the dead units. Added for the Runtime Monitor Agent.
 - Gradient flowing back through the layer, from a backward hook on its output: `grad_norm`, `grad_abs_mean`, `grad_abs_max`, `grad_nan_count`, `grad_inf_count`.
 
 **`extra` (training snapshots):**
 - `loss`: `{value, ema, z, spike, n_backward}`. `spike` comes from the EMA z-score detector.
 - `global_grad_norm`, `global_weight_norm`, `global_delta_norm`, `update_ratio` (‖ΔW‖/‖W‖).
-- `weight_norms` and `grad_abs_max` per parameter.
+- `weight_norms` and `grad_abs_max` (exact max \|gradient\|) per parameter.
 - `lrs` (one per parameter group).
 - `histograms` per layer, only when `histogram_bins > 0`.
 
@@ -100,7 +105,8 @@ single unit. `nn.Identity`, `nn.Flatten` and loss modules are skipped. A custom 
 | `every_n_steps` | 1 | monitor one step in N (non-monitored steps cost nothing) |
 | `layers` | `"auto"` | layer selection rule (see above) |
 | `max_layers` | 256 | cap on hooked layers |
-| `max_elems` | 65,536 | activations/gradients larger than this are sampled with a strided view |
+| `max_elems` | 16,384 | activations/gradients larger than this are sampled with a strided view (was 65,536 before the batched statistics) |
+| `nonfinite_check` | `"exact"` | `"exact"`: one extra reduction over every sampled tensor, so a NaN/Inf anywhere is counted; `"sampled"`: only inside the sample (cheaper on GPUs, see below) |
 | `max_param_elems` | 1,048,576 | weight elements sampled per tensor to measure the delta |
 | `histogram_bins` | 0 | > 0 adds normalised histograms to `extra["histograms"]` |
 | `track_activation_grads` | True | backward hooks on layer outputs |
@@ -121,10 +127,11 @@ single unit. `nn.Identity`, `nn.Flatten` and loss modules are skipped. A custom 
 - A forward hook on the root model, which detects validation passes.
 
 **Low overhead.** These ideas are adapted from package101's tracer:
-- **Statistics stay on the device.** They are computed on the tensor's own device (GPU or CPU) from views, so activations are never copied or moved.
-- **Large tensors are sampled.** Above `max_elems`, statistics come from a strided view. One extra reduction over the whole tensor still catches a NaN or Inf outside the sample (if both occur only outside the sample, only `nan_count` is raised), and norms are scaled by the sampling stride.
+- **Statistics stay on the device, and are computed in one batch.** On a GPU, the cost of monitoring is the number of kernel launches, not the arithmetic. So a hook only copies a strided sample of its tensor into its own row of a staging buffer that is allocated once (one kernel). The sample is at most `max_elems` elements and keeps the batch dimension so dead units can be measured. At the end of the step the statistics of all layers are computed together in a few dozen batched kernels, instead of about 25 kernels per layer. Activations themselves are never kept or moved.
+- **Large tensors are sampled.** Above `max_elems`, statistics come from the strided sample, and norms are scaled by the sampling ratio. With `nonfinite_check="exact"` (the default), one extra reduction over the whole tensor still catches a NaN or Inf outside the sample (if both occur only outside the sample, only `nan_count` is raised).
+- **Fused parameter statistics.** Gradient norms, max |gradient|, weight norms and weight deltas for all parameters use a handful of multi-tensor kernels (`torch._foreach_*` on CUDA). On MPS, whose norm kernel is about 20× slower than a multiply-and-sum, and on CPU, per-tensor dot products are used. ResNet-50 on an Apple M2 GPU: the parameter part went from +74% to +4.8% of step time, and every-step monitoring from +95% to +19% (+8% with `nonfinite_check="sampled"`). Measured in [overhead_benchmark.md](overhead_benchmark.md).
 - **No GPU synchronisation inside hooks.** No `.item()`, `float()` or `.tolist()`. At the end of a monitored step all statistics are packed into one small vector and copied to the host once, asynchronously, into a reused pinned buffer. The `TrainingState` is built when the copy lands, at most `max_pending` steps later.
-- **One extra copy.** A strided sample of each weight tensor is taken just before `optimizer.step()`, into a buffer allocated once, so the delta can be measured afterwards. The old adapter keeps a full copy of every parameter and calls `.item()` several times per layer each step.
+- **One extra copy.** A strided sample of each weight tensor is taken just before `optimizer.step()`, into a buffer allocated once (one fused copy), so the delta can be measured afterwards. The old adapter keeps a full copy of every parameter and calls `.item()` several times per layer each step.
 - **Non-blocking stream.** `SnapshotStream` is a bounded, thread-safe ring buffer. If the consumer falls behind, the oldest snapshots are dropped and counted in `stream.dropped`.
 
 **Loss dynamics.** `runtime/numerics.py` is a pure-Python port of package101's EMA z-score detector. It flags a loss
@@ -219,14 +226,14 @@ The adapter was the stopgap that "Module 1 will replace". It is left in place so
 - **One optimizer.** Only the optimizer passed to `RuntimeHooks` marks step boundaries. Multi-optimizer setups such as GANs should use one `RuntimeHooks` per model/optimizer pair.
 - **`backward()` is patched globally while attached.** It is restored on `detach()`.
 
-## For the Runtime Monitor Agent (next step)
+## Runtime Monitor Agent (built on these hooks)
 
-The agent should run in its own thread. It reads `hooks.stream` and runs (or reads) the invariant results. When
-something fails it turns that into a `Finding`/`Report` for `AgentState.detection_report`. Good inputs for that
-report:
-- the violated invariant and its details
-- the step
-- the relevant `activation_stats` and `extra` entries, as a reproducible trace of the moment
+The agent is built: [runtime_monitor_agent.md](runtime_monitor_agent.md).
+- It runs in its own thread and subscribes to `hooks.stream`.
+- It checks every snapshot with the Module 0 suite, the package101 runtime checks and a trend analyzer.
+- It turns violations into `Finding`s for `AgentState.detection_report`. Each finding carries the step and a trace
+  of that moment (the relevant `activation_stats` and `extra` entries).
+- Overhead and memory are benchmarked in [overhead_benchmark.md](overhead_benchmark.md).
 
 ## Provenance
 

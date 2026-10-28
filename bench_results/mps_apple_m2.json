@@ -1,0 +1,288 @@
+{
+  "environment": {
+    "date": "2026-10-28",
+    "torch": "2.14.1",
+    "python": "3.12.13",
+    "platform": "macOS-27.0.1-arm64-arm-64bit",
+    "processor": "arm",
+    "device": "Apple GPU (MPS), arm64",
+    "cpu_threads": 4
+  },
+  "budget": 0.05,
+  "steps": 10,
+  "reps": 5,
+  "quick": false,
+  "results": [
+    {
+      "workload": "resnet50",
+      "description": "ResNet-50, 16x3x224x224, SGD+momentum",
+      "parameters": 25557032,
+      "baseline_step_ms": 465.309145997162,
+      "overhead": {
+        "hooks_every_step": 0.16654151733121125,
+        "agent_every_step": 0.17006119591456859,
+        "agent_governed": 0.020748502655973278
+      },
+      "governor": {
+        "every_n_steps": 3,
+        "estimated_overhead": 0.024620506768265278,
+        "cost_per_monitored_step_ms": 50.17820849025156,
+        "baseline_step_ms": 679.3552080052905,
+        "probes": 1,
+        "adjustments": [
+          [
+            14,
+            3
+          ]
+        ]
+      },
+      "false_alarms_on_healthy_training": [],
+      "memory": {
+        "device": "mps",
+        "checked": true,
+        "samples": 20,
+        "device_growth_bytes": 0,
+        "detach_residual_bytes": 0,
+        "detach_residual_per_cycle": [
+          0,
+          0
+        ],
+        "control_growth_bytes": 0,
+        "control_residual_bytes": 0,
+        "monitoring_overhead_bytes": 101053184,
+        "leak": false
+      },
+      "profiler_added_ops": [
+        {
+          "op": "aten::copy_",
+          "added_calls": 527,
+          "added_cpu_us": 907750.1314999998,
+          "added_device_us": 0.0
+        },
+        {
+          "op": "Optimizer.step#SGD.step",
+          "added_calls": 0,
+          "added_cpu_us": 4224.513500000219,
+          "added_device_us": 0.0
+        },
+        {
+          "op": "aten::sum",
+          "added_calls": 811,
+          "added_cpu_us": 2326.512500000876,
+          "added_device_us": 0.0
+        },
+        {
+          "op": "aten::native_batch_norm",
+          "added_calls": 0,
+          "added_cpu_us": 988.6020000000335,
+          "added_device_us": 0.0
+        },
+        {
+          "op": "aten::mul",
+          "added_calls": 495,
+          "added_cpu_us": 897.4010000001581,
+          "added_device_us": 0.0
+        },
+        {
+          "op": "aten::view",
+          "added_calls": 1619,
+          "added_cpu_us": 629.4630000005444,
+          "added_device_us": 0.0
+        },
+        {
+          "op": "autograd::engine::evaluate_function: NativeBatchNormBackward0",
+          "added_calls": 0,
+          "added_cpu_us": 557.1239999994496,
+          "added_device_us": 0.0
+        },
+        {
+          "op": "autograd::engine::evaluate_function: ConvolutionBackward0",
+          "added_calls": 0,
+          "added_cpu_us": 552.0994999999966,
+          "added_device_us": 0.0
+        }
+      ]
+    },
+    {
+      "workload": "transformer",
+      "description": "Transformer LM (6 layers, d=512, 8 heads, vocab 32k), 8x255 tokens, AdamW",
+      "parameters": 51715328,
+      "baseline_step_ms": 581.9864539967966,
+      "overhead": {
+        "hooks_every_step": 0.02703699784480662,
+        "agent_every_step": 0.05719014724081961,
+        "agent_governed": -0.07811155278749726
+      },
+      "governor": {
+        "every_n_steps": 6,
+        "estimated_overhead": 0.025396923199485315,
+        "cost_per_monitored_step_ms": 70.95733351889066,
+        "baseline_step_ms": 465.6557079870254,
+        "probes": 1,
+        "adjustments": [
+          [
+            14,
+            6
+          ]
+        ]
+      },
+      "false_alarms_on_healthy_training": [],
+      "memory": {
+        "device": "mps",
+        "checked": true,
+        "samples": 20,
+        "device_growth_bytes": 0,
+        "detach_residual_bytes": 0,
+        "detach_residual_per_cycle": [
+          0,
+          0
+        ],
+        "control_growth_bytes": 0,
+        "control_residual_bytes": -262144,
+        "monitoring_overhead_bytes": 93716224,
+        "leak": false
+      },
+      "profiler_added_ops": [
+        {
+          "op": "aten::copy_",
+          "added_calls": 213,
+          "added_cpu_us": 457179.36900000053,
+          "added_device_us": 0.0
+        },
+        {
+          "op": "Optimizer.step#AdamW.step",
+          "added_calls": 0,
+          "added_cpu_us": 3261.139999998498,
+          "added_device_us": 0.0
+        },
+        {
+          "op": "aten::linear",
+          "added_calls": 0,
+          "added_cpu_us": 3045.5459999999844,
+          "added_device_us": 0.0
+        },
+        {
+          "op": "aten::sum",
+          "added_calls": 347,
+          "added_cpu_us": 1772.7954999994877,
+          "added_device_us": 0.0
+        },
+        {
+          "op": "aten::native_layer_norm_backward",
+          "added_calls": 0,
+          "added_cpu_us": 1606.314000000194,
+          "added_device_us": 0.0
+        },
+        {
+          "op": "aten::bmm",
+          "added_calls": 0,
+          "added_cpu_us": 1593.3184999999721,
+          "added_device_us": 0.0
+        },
+        {
+          "op": "aten::mm",
+          "added_calls": 0,
+          "added_cpu_us": 1129.2564999998867,
+          "added_device_us": 0.0
+        },
+        {
+          "op": "aten::addcmul_",
+          "added_calls": 0,
+          "added_cpu_us": 1081.5004999999655,
+          "added_device_us": 0.0
+        }
+      ]
+    },
+    {
+      "workload": "mlp",
+      "description": "MLP 1024-4096-4096-4096-1000, batch 512, AdamW",
+      "parameters": 41858024,
+      "baseline_step_ms": 113.5998293015291,
+      "overhead": {
+        "hooks_every_step": 0.2505957392259781,
+        "agent_every_step": 0.25332963831297794,
+        "agent_governed": 0.04651866238352964
+      },
+      "governor": {
+        "every_n_steps": 9,
+        "estimated_overhead": 0.027980452598462626,
+        "cost_per_monitored_step_ms": 28.449520490539726,
+        "baseline_step_ms": 112.9737920127809,
+        "probes": 1,
+        "adjustments": [
+          [
+            14,
+            9
+          ]
+        ]
+      },
+      "false_alarms_on_healthy_training": [],
+      "memory": {
+        "device": "mps",
+        "checked": true,
+        "samples": 20,
+        "device_growth_bytes": 0,
+        "detach_residual_bytes": 0,
+        "detach_residual_per_cycle": [
+          0,
+          0
+        ],
+        "control_growth_bytes": 0,
+        "control_residual_bytes": 0,
+        "monitoring_overhead_bytes": 17914112,
+        "leak": false
+      },
+      "profiler_added_ops": [
+        {
+          "op": "aten::copy_",
+          "added_calls": 44,
+          "added_cpu_us": 129049.45900000005,
+          "added_device_us": 0.0
+        },
+        {
+          "op": "Optimizer.step#AdamW.step",
+          "added_calls": 0,
+          "added_cpu_us": 322.87650000016686,
+          "added_device_us": 0.0
+        },
+        {
+          "op": "aten::where",
+          "added_calls": 18,
+          "added_cpu_us": 277.99050000000807,
+          "added_device_us": 0.0
+        },
+        {
+          "op": "aten::sum",
+          "added_calls": 52,
+          "added_cpu_us": 134.8960000000605,
+          "added_device_us": 0.0
+        },
+        {
+          "op": "aten::mul",
+          "added_calls": 36,
+          "added_cpu_us": 68.79249999997944,
+          "added_device_us": 0.0
+        },
+        {
+          "op": "autograd::engine::evaluate_function: LinearBackward0",
+          "added_calls": 0,
+          "added_cpu_us": 41.333499999977676,
+          "added_device_us": 0.0
+        },
+        {
+          "op": "aten::abs",
+          "added_calls": 38,
+          "added_cpu_us": 41.209499999922286,
+          "added_device_us": 0.0
+        },
+        {
+          "op": "aten::eq",
+          "added_calls": 16,
+          "added_cpu_us": 38.74899999998024,
+          "added_device_us": 0.0
+        }
+      ]
+    }
+  ],
+  "failures": []
+}

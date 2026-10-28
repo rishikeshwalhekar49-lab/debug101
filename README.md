@@ -6,9 +6,10 @@ goes down, and the model still doesn't learn what you think it does.
 
 > **Status: active development.** The foundation (bug taxonomy + runtime
 > invariants) is built and tested, Module 2 (AST static analyzer + semantic LLM
-> reviewer + CLI) is implemented, and the Module 1 runtime hooks (the Runtime
-> Monitor Agent's perception layer) now feed live PyTorch runs into the
-> invariants, with **90/90 tests passing** (the 21 runtime tests need torch).
+> reviewer + CLI) is implemented, and Module 1 is built: the runtime hooks plus
+> the **Runtime Monitor Agent**, which runs a training script, finds silent bugs
+> while it trains and reports them as `Finding`s for the Supervisor, within a 5%
+> overhead budget. **125/125 tests passing** (the runtime tests need torch).
 > See [Project status](#project-status).
 
 ## Why this exists
@@ -32,7 +33,7 @@ project aims to automate that session.
 |---|---|---|
 | 0 | Bug taxonomy + runtime invariant library | **Built, 13/13 tests passing** |
 | – | PyTorch adapter + test bench (`examples/`) | **Verified on real PyTorch (6/6 detected/passed)** |
-| 1 | PyTorch hooks, live runtime monitor | **Hooks built** (`silent_bug_agent/runtime/`): 21 tests, standalone validation on 7 architectures, same 6/6 planted-bug verdicts as the adapter. Runtime Monitor Agent: planned |
+| 1 | PyTorch hooks, live runtime monitor | **Built.** Hooks (`silent_bug_agent/runtime/`): 21 tests, 7 architectures. **Runtime Monitor Agent** (`silent_bug_agent/agents/runtime_monitor_agent.py`): 35 tests, catches all 10 planted bugs with no finding on the clean run. Governed overhead below 5% on ResNet-50 / Transformer / MLP, with 0 B GPU memory growth or residue (Apple M2 GPU; CUDA not yet measured) ([docs](docs/runtime_monitor_agent.md), [benchmark](docs/overhead_benchmark.md)) |
 | 2 | Static analyzer (AST) + semantic (LLM) analyzer + CLI | **Built, 55/55 tests passing across Modules 0 & 2** |
 | 3 | One-batch-overfit and multi-seed validation | Planned |
 | 4 | Root-cause diagnosis | Planned |
@@ -113,6 +114,27 @@ python examples/demo_invariant_check.py
 
 # Run the test bench across planted bugs (eval_mode, frozen, high_lr, dead_relu, random_labels)
 python examples/planted_bugs_torch.py --bug all
+```
+
+### Run a training script under the Runtime Monitor Agent (Module 1)
+
+The script stays unmodified. The agent runs it for a bounded number of steps,
+finds the model and optimizer by itself, and prints the silent bugs it saw, each
+pointing at a line of the script:
+
+```bash
+python -m silent_bug_agent.agents.runtime_monitor_agent examples/sample_scripts/planted_runtime_bugs.py -- --bug frozen
+python -m silent_bug_agent.agents.runtime_monitor_agent train.py --max-steps 500 --json -- --epochs 3
+```
+
+For the Supervisor: `SupervisorAgent(detection_agent=RuntimeMonitorAgent())`. Calling
+`RuntimeMonitorAgent()(state)` fills `state.detection_report`. To monitor your own live loop
+in-process, keeping overhead under 5%, use `with agent.watch(model, optimizer) as session: ...`.
+The design, the findings and the limitations are in
+[docs/runtime_monitor_agent.md](docs/runtime_monitor_agent.md). Overhead and GPU-memory results:
+
+```bash
+python examples/benchmark_hooks.py            # ResNet-50, Transformer, MLP; add --device cuda on an NVIDIA GPU
 ```
 
 ### Monitor a live PyTorch run with the runtime hooks (Module 1)
@@ -199,7 +221,7 @@ invariants work unchanged.
 
 How it stays cheap:
 
-- Statistics are computed on the GPU from views and sampled above 65,536 elements, with one full NaN/Inf check.
+- Hooks only stage a sample of each tensor (16,384 elements at most); the statistics of all layers are computed together at the end of the step, with one full NaN/Inf check per sampled tensor.
 - Hooks never synchronise with the GPU. Each step makes one async device-to-host copy into reused pinned buffers.
 - A non-blocking ring buffer (`SnapshotStream`) streams snapshots to the agent.
 
@@ -271,11 +293,21 @@ silent-bug-agent/
 │   │   ├── client.py
 │   │   ├── prompt.py
 │   │   └── analyzer.py
-│   ├── runtime/                      # Module 1: PyTorch hooks -> TrainingState
+│   ├── schemas.py                    # AgentState and inter-agent contracts
+│   ├── agents/                       # specialist agents driven by the Supervisor
+│   │   ├── __init__.py
+│   │   └── runtime_monitor_agent.py  #   Module 1: RuntimeMonitorAgent (contract, watch(), CLI)
+│   ├── runtime/                      # Module 1: PyTorch hooks -> TrainingState, agent tools
 │   │   ├── __init__.py
 │   │   ├── hooks.py                  #   RuntimeHooks, collectors, SnapshotStream
 │   │   ├── numerics.py               #   EMA z-score spike detector (no torch)
-│   │   └── validate.py               #   standalone validation across architectures
+│   │   ├── validate.py               #   standalone validation across architectures
+│   │   ├── session.py                #   live observe -> check -> alert loop
+│   │   ├── anomaly.py                #   invariant evaluator (Module 0 suite + runtime checks)
+│   │   ├── trends.py                 #   rolling-window trend analyzer
+│   │   ├── alerts.py                 #   alert aggregation + early-alert dispatcher
+│   │   ├── instrument.py             #   unmodified-script instrumentation, zero_grad sensor
+│   │   └── profiling.py              #   overhead governor, leak detector, profiler
 │   ├── validation/                   # (planned) Module 3: overfit + multi-seed
 │   ├── diagnosis/                    # (planned) Module 4: root cause
 │   ├── repair/                       # (planned) Module 5: fix synthesis
@@ -285,13 +317,18 @@ silent-bug-agent/
 │   ├── demo_invariant_check.py       # synthetic scenarios, no torch
 │   ├── torch_adapter.py              # stopgap TrainingState collector for torch
 │   ├── planted_bugs_torch.py         # test bench + CUSTOM CODE section
+│   ├── benchmark_hooks.py            # overhead/memory benchmark (ResNet-50, Transformer, MLP)
 │   └── sample_scripts/               # buggy and clean scripts for testing
 │       ├── buggy_mnist.py
-│       └── clean_mnist.py
+│       ├── clean_mnist.py
+│       └── planted_runtime_bugs.py   # plain script with 10 selectable planted bugs
 ├── docs/
-│   └── module1_runtime_hooks.md      # Module 1 design, API, validation results
+│   ├── module1_runtime_hooks.md      # Module 1 hooks: design, API, validation results
+│   ├── runtime_monitor_agent.md      # Runtime Monitor Agent: design, findings, contract
+│   └── overhead_benchmark.md         # formal overhead and GPU-memory benchmark
 └── tests/
-    ├── test_runtime_hooks.py         # Module 1 (skipped without torch)
+    ├── test_runtime_hooks.py         # Module 1 hooks (skipped without torch)
+    ├── test_runtime_monitor_agent.py # Runtime Monitor Agent: contract, tools, synthetic loops
     ├── test_invariants.py
     ├── test_findings.py
     ├── test_static.py
@@ -301,7 +338,7 @@ silent-bug-agent/
 
 ## Roadmap
 
-1. **Module 1, live runtime monitor.** *(Hooks completed)* PyTorch hooks populate `TrainingState` every step (`silent_bug_agent/runtime/`). Next: the Runtime Monitor Agent consumes the snapshot stream and turns violations into alerts with a reproducible trace.
+1. **Module 1, live runtime monitor.** *(Completed)* PyTorch hooks populate `TrainingState` every step (`silent_bug_agent/runtime/`). The Runtime Monitor Agent consumes the snapshot stream and turns violations into early alerts and `Finding`s with a reproducible trace, within a 5% overhead budget (`silent_bug_agent/agents/runtime_monitor_agent.py`). Next: run the benchmark on a CUDA GPU and wire the agent into the Supervisor and the CLI `monitor` command.
 2. **Module 2, static + semantic detectors.** *(Completed)* AST-based analyzer and LLM reviewer with CLI.
 3. **Module 3, validation oracle.** One-batch-overfit test and multi-seed reproduction, comparing metric distributions rather than single runs.
 4. **Module 4, root-cause diagnosis.** A small knowledge graph seeded from the taxonomy; statistical specs checked against Module 3 runs.
