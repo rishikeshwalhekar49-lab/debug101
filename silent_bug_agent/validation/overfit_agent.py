@@ -201,35 +201,89 @@ def evaluate_candidate_patches(
 
 
 class OverfitOracleAgent:
-    """One-Batch Overfit Oracle Agent (Task 3.1).
+    """Gate 1: can the patched script learn a single batch?
 
-    Runs as the first validation agent in the pipeline.
-    Checks whether a candidate patch can overfit on a single batch.
+    Runs the real script on one repeated batch and checks the numbers: it must
+    finish, every loss must be finite, the trainable parameters must receive
+    gradients, and the loss must fall to `target_ratio` of its start within
+    `steps` (a 10% drop by default, with the script's own optimizer and learning
+    rate). It is a cheap sanity filter, so it runs before the multi-seed gate.
     """
 
-    def __init__(self, steps: int = 200, target_ratio: float = 0.05, patience: int = 20):
+    def __init__(self, steps: int = 200, target_ratio: float = 0.9, patience: int = 20, *,
+                 min_drop: float = 0.02, timeout: float = 120.0, sandbox=None, script_args=None):
         self.steps = steps
         self.target_ratio = target_ratio
         self.patience = patience
+        self.min_drop = min_drop  # scripts may run far fewer steps than `steps`
+        self.timeout = timeout
+        self.script_args = list(script_args or [])
+        self.sandbox = sandbox
+
+    def _sandbox(self):
+        if self.sandbox is None:
+            from .sandbox import SubprocessSandbox
+
+            self.sandbox = SubprocessSandbox()
+        return self.sandbox
+
+    def check_code(self, code: str, as_file=None) -> dict:
+        """Run one-batch overfitting on source code and return what was measured."""
+        result = self._sandbox().run_measured(code, seed=0, mode="overfit", max_steps=self.steps, timeout=self.timeout,
+                                              script_args=self.script_args, as_file=as_file)
+        report = dict(result.run_report or {})
+        report.pop("losses", None)
+        passed, reason = self._judge(result, report)
+        return {"probe": "one_batch_overfit", "passed": passed, "reason": reason, **report}
+
+    def _judge(self, result, report: dict):
+        if result.timed_out:
+            return False, f"The run timed out after {self.timeout:g} seconds."
+        if not result.success:
+            return False, f"The script failed: {str(result.error_message)[-400:]}"
+        if report.get("steps", 0) < 2:
+            return False, "No training steps were observed."
+        if report.get("nonfinite_losses"):
+            return False, f"{report['nonfinite_losses']} loss value(s) were NaN or infinite."
+        total, flowing = report.get("params_trainable", 0), report.get("params_with_gradient", 0)
+        if total and flowing < total:
+            return False, f"Only {flowing} of {total} trainable parameter tensors received a gradient."
+        ratio = report.get("loss_ratio")
+        if ratio is None:
+            return False, "No loss was recorded."
+        needed = self.target_ratio if report["steps"] >= self.steps else 1.0 - self.min_drop
+        if report.get("final_loss", 1.0) < 1e-3 or ratio <= needed:
+            return True, f"The loss fell to {ratio:.3f} of its start on one batch."
+        return False, f"The loss only reached {ratio:.3f} of its start on one batch (needed {needed:.3f})."
 
     def call(self, state):
+        from pathlib import Path
+
         from ..schemas import ValidationVerdict
+        from .multiseedagent import apply_patch_string
 
         candidates = getattr(state, "patch_candidates", getattr(state, "patchcandidates", []))
         verdicts = getattr(state, "validation_verdicts", getattr(state, "validationverdicts", []))
+        target = getattr(state, "target_file", "")
+        judged = {id(v.patch_candidate) for v in verdicts if v.validator == "overfit_oracle"}
+        baseline = ""
+        if target and Path(target).is_file():
+            baseline = Path(target).read_text(encoding="utf-8")
 
         for candidate in candidates:
-            # Candidates with high confidence pass the overfit check
-            is_accepted = getattr(candidate, "confidence", 1.0) >= 0.5
-            verdict = ValidationVerdict(
+            if id(candidate) in judged:
+                continue
+            if not baseline:
+                outcome = {"passed": False, "reason": "There is no target script to run the patch against."}
+            else:
+                outcome = self.check_code(apply_patch_string(baseline, candidate), as_file=str(Path(target).resolve()))
+            verdicts.append(ValidationVerdict(
                 patch_candidate=candidate,
-                accepted=is_accepted,
+                accepted=bool(outcome["passed"]),
                 validator="overfit_oracle",
-                notes="One-batch overfit validation evaluated.",
-                extra={"steps": self.steps, "target_ratio": self.target_ratio},
-            )
-            verdicts.append(verdict)
-
+                notes=outcome["reason"],
+                extra=outcome,
+            ))
         return state
 
     def __call__(self, state):

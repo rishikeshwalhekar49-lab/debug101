@@ -11,7 +11,7 @@ dist/
 venv/
 env/
 
-# Secrets (the Phase 2 semantic analyzer will need an API key; never commit it)
+# Secrets: API keys live in .env, which must never be committed
 .env
 *.key
 
@@ -33,3 +33,7 @@ concepts/
 .idea/
 .vscode/
 .DS_Store
+
+# Agent memory and backups made by `fix`
+.silent_bug_agent/
+*.py.orig

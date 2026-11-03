@@ -131,6 +131,7 @@ def test_sandbox_resource_limits():
     assert "MEM: 512" in res.stdout
 
 
+@pytest.mark.skipif(sys.platform == "darwin", reason="macOS does not enforce RLIMIT_AS; Windows and Linux do")
 def test_sandbox_memory_limit_stops_exceeding_child():
     config = SandboxConfig(max_memory_mb=64)
     sandbox = SubprocessSandbox(config=config)

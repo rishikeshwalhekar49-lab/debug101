@@ -56,7 +56,7 @@ def _internal_prefixes() -> Tuple[str, ...]:
     for key in ("stdlib", "platstdlib", "purelib", "platlib"):
         if paths.get(key):
             out.add(paths[key])
-    return tuple(os.path.realpath(p) + os.sep for p in out)
+    return tuple(os.path.normcase(os.path.realpath(p)) + os.sep for p in out)
 
 
 _INTERNAL: Optional[Tuple[str, ...]] = None
@@ -68,7 +68,7 @@ def _is_internal(filename: str) -> bool:
         _INTERNAL = _internal_prefixes()
     if filename.startswith("<"):
         return True
-    return os.path.realpath(filename).startswith(_INTERNAL)
+    return os.path.normcase(os.path.realpath(filename)).startswith(_INTERNAL)
 
 
 def user_frame(depth: int = 1) -> Optional[Location]:
@@ -348,17 +348,22 @@ class ScriptResult:
     exit_code: Optional[int] = None
 
 
-def exec_script(path: str, argv: Sequence[str] = (), cwd: Optional[str] = None) -> ScriptResult:
-    """Run ``path`` as ``__main__`` in this process (like ``python path argv...``) and restore argv/path/cwd."""
+def exec_script(path: str, argv: Sequence[str] = (), cwd: Optional[str] = None,
+                display_path: Optional[str] = None) -> ScriptResult:
+    """Run ``path`` as ``__main__`` in this process (like ``python path argv...``) and restore argv/path/cwd.
+
+    ``display_path`` makes a patched copy behave as if it were the original file, so
+    its relative paths and sibling imports still work."""
     import types
 
-    script = os.path.abspath(path)
+    source_file = os.path.abspath(path)
+    script = os.path.abspath(display_path) if display_path else source_file
     old_argv, old_path, old_cwd = list(sys.argv), list(sys.path), os.getcwd()
     main_mod = sys.modules.get("__main__")
     res = ScriptResult()
     t0 = time.time()
     try:
-        with open(script, encoding="utf-8") as f:
+        with open(source_file, encoding="utf-8") as f:
             source = f.read()
         if cwd:
             os.chdir(cwd)

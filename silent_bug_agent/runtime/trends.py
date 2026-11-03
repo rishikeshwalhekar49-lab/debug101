@@ -116,6 +116,8 @@ class TrendThresholds:
     update_ratio_max: float = 1.0  # a single step changing the weights by more than their norm
     update_ratio_hi: float = 0.2  # rolling median above this: LR far too high
     update_ratio_lo: float = 1e-8  # rolling median below this (with non-zero grads and LR): LR far too low
+    saturation: float = 0.9  # share of tanh/sigmoid outputs pinned at their limits ...
+    saturation_patience: int = 5  # ... for this many consecutive snapshots
 
 
 class TrendAnalyzer:
@@ -127,12 +129,14 @@ class TrendAnalyzer:
         self.loss = RollingWindow(self.t.loss_window)
         self.update = RollingWindow(self.t.update_window)
         self._dead_streak: Dict[str, int] = {}
+        self._saturated_streak: Dict[str, int] = {}
 
     def reset(self) -> None:
         self.grad.reset()
         self.loss.reset()
         self.update.reset()
         self._dead_streak.clear()
+        self._saturated_streak.clear()
 
     def summary(self) -> Dict[str, Optional[float]]:
         """Current trend statistics, attached to findings as context."""
@@ -157,6 +161,7 @@ class TrendAnalyzer:
         out += self._loss_divergence(step)
         out += self._update_ratio(step, extra)
         out += self._dead_units(step, state.activation_stats.items())
+        out += self._saturation(step, state.activation_stats.items())
         return out
 
     # ------------------------------------------------------------------ checks
@@ -231,6 +236,25 @@ class TrendAnalyzer:
                     f"median relative update ||dW||/||W|| = {med:.3g} is below {self.t.update_ratio_lo:g} although "
                     "gradients are non-zero; the model barely changes (learning rate far too low)",
                     step, value=med, anchor="optimizer",
+                ))
+        return out
+
+    def _saturation(self, step: int, layers: Iterable[Tuple[str, Dict[str, float]]]) -> List[Signal]:
+        out: List[Signal] = []
+        for label, st in layers:
+            if not any(kind in label for kind in ("[Tanh]", "[Sigmoid]", "[Hardtanh]")):
+                continue
+            frac = st.get("saturated_frac")
+            if frac is None or frac != frac:
+                continue
+            self._saturated_streak[label] = self._saturated_streak.get(label, 0) + 1 if frac >= self.t.saturation else 0
+            if self._saturated_streak[label] >= self.t.saturation_patience:
+                out.append(Signal(
+                    "trend:saturation", "non_normalized_inputs", Severity.WARNING, 0.6,
+                    f"{frac:.0%} of the outputs of {label} sit at the activation's limits, for "
+                    f"{self._saturated_streak[label]} consecutive monitored steps, so its gradients vanish; the inputs "
+                    "are probably not normalised",
+                    step, value=frac, offenders={label: frac}, anchor="model_call", layer=label,
                 ))
         return out
 

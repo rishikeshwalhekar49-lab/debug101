@@ -23,6 +23,9 @@ from typing import Any, Dict, List, Optional
 from .findings import Finding, Report
 
 
+FINAL_VALIDATOR = "validation_analyzer"  # its verdict settles a patch
+PRECHECK_VALIDATOR = "temporary_patch_and_syntax_check"  # only says the patch applies
+
 # ---------------------------------------------------------------------------
 # Shared enums
 # ---------------------------------------------------------------------------
@@ -216,7 +219,19 @@ class AgentState:
 
     @property
     def accepted_patches(self) -> List[ValidationVerdict]:
-        return [v for v in self.validation_verdicts if v.accepted]
+        """Verdicts of patches that passed. The analyzer's verdict is final; without one, every gate must agree."""
+        final = {id(v.patch_candidate): v for v in self.validation_verdicts if v.validator == FINAL_VALIDATOR}
+        rejected = {id(v.patch_candidate) for v in self.validation_verdicts
+                    if not v.accepted and v.validator != PRECHECK_VALIDATOR}
+        accepted: List[ValidationVerdict] = []
+        for verdict in self.validation_verdicts:
+            key = id(verdict.patch_candidate)
+            if key in final:
+                if verdict is final[key] and verdict.accepted:
+                    accepted.append(verdict)
+            elif verdict.accepted and key not in rejected:
+                accepted.append(verdict)
+        return accepted
 
     @property
     def best_hypothesis(self) -> Optional[DiagnosticHypothesis]:

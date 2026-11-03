@@ -197,7 +197,7 @@ class RuntimeMonitorAgent:
         cfg = self.config
         streamed: List[Finding] = []
         tail: deque = deque(maxlen=40)
-        with tempfile.TemporaryDirectory(prefix="sba_monitor_") as tmp:
+        with tempfile.TemporaryDirectory(prefix="sba_monitor_", ignore_cleanup_errors=True) as tmp:
             cfg_path, result_path = os.path.join(tmp, "config.json"), os.path.join(tmp, "result.json")
             child_cfg = asdict(cfg)
             child_cfg["isolate"] = False
@@ -206,10 +206,15 @@ class RuntimeMonitorAgent:
                            "result_path": result_path}, f)
             env = dict(os.environ)
             env["PYTHONPATH"] = _PKG_PARENT + (os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else "")
+            if cfg.cwd:
+                env["PYTHONPATH"] += os.pathsep + str(cfg.cwd)
             env["PYTHONUNBUFFERED"] = "1"
+            env["PYTHONUTF8"] = "1"
+            env["PYTHONIOENCODING"] = "utf-8"
             proc = subprocess.Popen([sys.executable, "-m", "silent_bug_agent.agents.runtime_monitor_agent",
                                      "--child", cfg_path], stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                    text=True, bufsize=1, env=env, cwd=cfg.cwd or os.getcwd())
+                                    text=True, encoding="utf-8", errors="replace", bufsize=1, env=env,
+                                    cwd=cfg.cwd or os.getcwd())
 
             def pump() -> None:
                 assert proc.stdout is not None

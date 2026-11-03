@@ -1,4 +1,4 @@
-"""Supervisor agent coordinating validation agents and experience memory."""
+"""Validation pipeline coordinator: runs the validation agents over existing patch candidates."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from .validation.overfit_agent import OverfitOracleAgent
 
 
 class SupervisorAgent:
-    """Supervisor coordinator wired with validation agents."""
+    """Runs validation only. The full graph is in `agents/supervisor.py`."""
 
     def __init__(
         self,
@@ -18,7 +18,10 @@ class SupervisorAgent:
         **kwargs: Any,
     ):
         # Support both validation_agents and validationagents parameter names
-        agents = validation_agents or kwargs.get("validationagents")
+        agents = validation_agents or kwargs.pop("validationagents", None)
+        if kwargs:
+            raise TypeError(f"Unknown SupervisorAgent argument(s): {sorted(kwargs)}. "
+                            "The full pipeline is silent_bug_agent.agents.supervisor.SupervisorAgent.")
         if agents is None:
             # Default pipeline registration: OverfitOracle first, Multiseed second
             agents = [OverfitOracleAgent(), MultiseedAgent()]

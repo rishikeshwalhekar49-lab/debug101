@@ -424,6 +424,7 @@ class ActivationCollector:
         self.track_grads = track_grads
         self.capture_eval = capture_eval
         self.active = True
+        self.errors: List[str] = []
         self.handles: List[Any] = []
         L, W = len(layers), extractor.max_elems
         self.stages = {k: _Staging(L, W, exact_nonfinite) for k in ("train", "eval", "grad")}
@@ -459,6 +460,13 @@ class ActivationCollector:
         self.handles.clear()
 
     def _on_forward(self, i: int, module: nn.Module, inputs: Any, output: Any) -> None:
+        try:
+            self._forward(i, output)
+        except Exception as exc:  # monitoring must never stop the user's training
+            self.active = False
+            self.errors.append(f"forward hook on {self.labels[i]}: {type(exc).__name__}: {exc}")
+
+    def _forward(self, i: int, output: Any) -> None:
         if _compiling():
             return
         training_pass = torch.is_grad_enabled()
@@ -479,10 +487,14 @@ class ActivationCollector:
             t.register_hook(partial(self._on_grad, i))
 
     def _on_grad(self, i: int, g: torch.Tensor) -> None:
-        if self.active and g is not None:
-            with torch.no_grad():
-                self.stages["grad"].write(i, g)
-            self.train["grad"].add(i)
+        try:
+            if self.active and g is not None:
+                with torch.no_grad():
+                    self.stages["grad"].write(i, g)
+                self.train["grad"].add(i)
+        except Exception as exc:
+            self.active = False
+            self.errors.append(f"gradient hook on {self.labels[i]}: {type(exc).__name__}: {exc}")
         return None  # never modifies the gradient
 
     # ------------------------------------------------- end of step: all layers at once
@@ -585,11 +597,26 @@ class ParameterCollector:
         out = torch.stack([v if v.dtype == torch.float32 else v.float() for v in vals])
         return out.sqrt() if ord == 2.0 else out
 
+    @staticmethod
+    def _dense(g: torch.Tensor) -> torch.Tensor:
+        """The stored values of a sparse gradient (its norm and max are the same), else the gradient."""
+        g = g.detach()
+        return g.coalesce().values() if g.is_sparse else g
+
+    @torch.no_grad()
+    def refresh_grads(self) -> None:
+        """Re-measure gradients after step(closure): the closure computed them after the pre-hook ran."""
+        if self._pre is None:
+            return
+        self.last_has_grad = [p.grad is not None for p in self.params]
+        grads = [self._dense(p.grad) for p in self.params if p.grad is not None]
+        self._pre = (self._norms(grads), self._norms(grads, float("inf")), self._pre[2])
+
     @torch.no_grad()
     def norms(self) -> None:
         """Per-parameter gradient L2 norm and max |gradient| (exact), and weight norm."""
         self.last_has_grad = [p.grad is not None for p in self.params]
-        grads = [p.grad.detach() for p in self.params if p.grad is not None]
+        grads = [self._dense(p.grad) for p in self.params if p.grad is not None]
         for i, p in enumerate(self.params):
             self._ensure_shadow(i, p)
         self._pre = (self._norms(grads), self._norms(grads, float("inf")),
@@ -664,6 +691,9 @@ class _BackwardPatch:
     wrapper: Any = None
     local = threading.local()
 
+    scaler_orig: Any = None
+    scaler_wrapper: Any = None
+
     @classmethod
     def add(cls, c: "LossCollector") -> None:
         with cls.lock:
@@ -673,6 +703,22 @@ class _BackwardPatch:
                 cls.orig = torch.Tensor.backward
                 cls.wrapper = cls._make(cls.orig)
                 torch.Tensor.backward = cls.wrapper  # type: ignore[assignment]
+            scaler = getattr(getattr(torch, "amp", None), "GradScaler", None)
+            if scaler is not None and cls.scaler_wrapper is None:
+                cls.scaler_orig = scaler.scale
+                cls.scaler_wrapper = cls._make_scale(cls.scaler_orig)
+                scaler.scale = cls.scaler_wrapper
+
+    @staticmethod
+    def _make_scale(orig: Any) -> Any:
+        def scale(self, outputs):  # type: ignore[no-untyped-def]
+            out = orig(self, outputs)
+            factor = getattr(self, "_scale", None)
+            if isinstance(out, torch.Tensor) and out is not outputs and isinstance(factor, torch.Tensor):
+                out._sba_loss_scale = factor  # backward() divides it out again
+            return out
+
+        return scale
 
     @classmethod
     def remove(cls, c: "LossCollector") -> None:
@@ -682,6 +728,11 @@ class _BackwardPatch:
             if not cls.collectors and cls.wrapper is not None and torch.Tensor.backward is cls.wrapper:
                 torch.Tensor.backward = cls.orig  # type: ignore[assignment]
                 cls.orig = cls.wrapper = None
+            scaler = getattr(getattr(torch, "amp", None), "GradScaler", None)
+            if not cls.collectors and scaler is not None and cls.scaler_wrapper is not None \
+                    and scaler.scale is cls.scaler_wrapper:
+                scaler.scale = cls.scaler_orig
+                cls.scaler_orig = cls.scaler_wrapper = None
 
     @classmethod
     def _make(cls, orig: Any) -> Any:
@@ -689,6 +740,9 @@ class _BackwardPatch:
             nested = getattr(cls.local, "inside", False)  # backward() called from inside a backward pass
             if not nested and cls.collectors and not _compiling() and t.numel() == 1 and t.is_floating_point():
                 v = t.detach().reshape(()).float()
+                factor = getattr(t, "_sba_loss_scale", None)
+                if factor is not None:
+                    v = v / factor.detach().reshape(()).float().to(v.device)
                 for c in list(cls.collectors):
                     c.values.append(v)
             cls.local.inside = True
@@ -816,6 +870,8 @@ class RuntimeHooks:
         self._handles: List[Any] = []
         self._steps_done = 0
         self._paused = False
+        self._broken = False
+        self._closure = False
         self._attached = False
         self._eval_taken = False
         self._pending: Deque[Tuple[Any, torch.Tensor, Dict[str, Any]]] = deque()
@@ -840,7 +896,14 @@ class RuntimeHooks:
         self._paused = True
         self.acts.active = False
 
+    @property
+    def errors(self) -> List[str]:
+        """Internal errors that switched monitoring off (training was never interrupted)."""
+        return self.acts.errors
+
     def resume(self) -> None:
+        if self._broken:
+            return
         self._paused = False
         self.acts.active = self._monitoring()
 
@@ -895,12 +958,34 @@ class RuntimeHooks:
         self.losses.observe(loss)
 
     # -------------------------------------------------------------- training
+    def _fail(self, where: str, exc: BaseException) -> None:
+        """Turn monitoring off for good after an internal error; training carries on untouched."""
+        self.errors.append(f"{where}: {type(exc).__name__}: {exc}")
+        self._broken = True
+        self.pause()
+
     def _on_opt_pre(self, opt: Any, args: Any, kwargs: Any) -> None:
+        # PyTorch passes (optimizer, *step_args), so a closure is any callable among them
+        self._closure = any(callable(a) for a in (args or ())) or callable((kwargs or {}).get("closure"))
         if self._monitoring():
-            self.param_coll.before_step()
+            try:
+                self.param_coll.before_step()
+            except Exception as exc:
+                self._fail("optimizer pre-hook", exc)
 
     def _on_opt_post(self, opt: Any, args: Any, kwargs: Any) -> None:
-        self._complete_step(self.param_coll.after_step() if self._monitoring() else None)
+        rows = None
+        if self._monitoring():
+            try:
+                if self._closure:
+                    self.param_coll.refresh_grads()
+                rows = self.param_coll.after_step()
+            except Exception as exc:
+                self._fail("optimizer post-hook", exc)
+        try:
+            self._complete_step(rows)
+        except Exception as exc:
+            self._fail("snapshot", exc)
 
     def end_step(self) -> None:
         """Mark the end of a training step when no optimizer hook is available (manual updates).
@@ -926,6 +1011,12 @@ class RuntimeHooks:
 
     # ---------------------------------------------------------------- eval
     def _on_root_forward(self, module: nn.Module, inputs: Any, output: Any) -> None:
+        try:
+            self._root_forward()
+        except Exception as exc:
+            self._fail("validation snapshot", exc)
+
+    def _root_forward(self) -> None:
         if _compiling() or torch.is_grad_enabled() or self.config.eval_snapshots == "off":
             return
         if self.config.eval_snapshots == "first" and self._eval_taken:

@@ -57,6 +57,7 @@ class ExecutionResult:
     duration_seconds: float = 0.0
     metrics: Dict[str, Any] = field(default_factory=dict)
     error_message: Optional[str] = None
+    run_report: Dict[str, Any] = field(default_factory=dict)
 
     @property
     def success(self) -> bool:
@@ -191,6 +192,10 @@ class SubprocessSandbox:
             env["DL_SEED"] = str(seed)
             env["TORCH_SEED"] = str(seed)
 
+        # Child output is decoded as UTF-8, so a Windows code page cannot break it
+        env["PYTHONUTF8"] = "1"
+        env["PYTHONIOENCODING"] = "utf-8"
+
         # Enforce CPU core / thread limits via environment
         if self.config.max_cpu_cores is not None:
             core_str = str(self.config.max_cpu_cores)
@@ -246,10 +251,57 @@ class SubprocessSandbox:
             cmd.extend(["--seed", str(seed)])
         if args:
             cmd.extend(args)
+        return self._execute(cmd, seed, timeout, cwd or self.config.cwd or str(path.parent))
 
+    def run_measured(
+        self,
+        code: str,
+        *,
+        seed: int = 0,
+        mode: str = "run",
+        max_steps: Optional[int] = None,
+        script_args: Optional[List[str]] = None,
+        timeout: Optional[float] = None,
+        cwd: Optional[str] = None,
+        as_file: Optional[str] = None,
+    ) -> ExecutionResult:
+        """Run any training code under `script_runner`, which needs no help from the code."""
+        temp_dir = Path(tempfile.mkdtemp(prefix="dl_sandbox_"))
+        try:
+            script_file = temp_dir / "workload.py"
+            script_file.write_text(code, encoding="utf-8")
+            result_file = temp_dir / "result.json"
+            cmd = [self.config.python_executable, "-m", "silent_bug_agent.validation.script_runner", str(script_file),
+                   "--mode", mode, "--seed", str(seed), "--result", str(result_file)]
+            if max_steps is not None:
+                cmd += ["--max-steps", str(max_steps)]
+            if as_file:
+                cmd += ["--as-file", str(as_file)]
+            if script_args:
+                cmd += ["--", *script_args]
+            effective_cwd = cwd or self.config.cwd or (str(Path(as_file).parent) if as_file else str(temp_dir))
+            result = self._execute(cmd, seed, timeout, effective_cwd, extra_path=str(Path(effective_cwd).resolve()))
+            if result_file.is_file():
+                report = json.loads(result_file.read_text(encoding="utf-8"))
+                result.run_report = report
+                if report.get("status") == "error" and report.get("error"):
+                    result.error_message = str(report["error"])[-1500:]
+            return result
+        finally:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+
+    def _execute(
+        self,
+        cmd: List[str],
+        seed: Optional[int],
+        timeout: Optional[float],
+        cwd: Optional[str],
+        extra_path: Optional[str] = None,
+    ) -> ExecutionResult:
         timeout_sec = timeout if timeout is not None else self.config.timeout_seconds
         env = self._build_env(seed=seed)
-        effective_cwd = cwd or self.config.cwd or str(path.parent)
+        if extra_path:
+            env["PYTHONPATH"] = env["PYTHONPATH"] + os.pathsep + extra_path
         start_time = time.perf_counter()
 
         preexec_fn = None
@@ -272,8 +324,10 @@ class SubprocessSandbox:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 env=env,
-                cwd=effective_cwd,
+                cwd=cwd,
                 preexec_fn=preexec_fn,
             )
 

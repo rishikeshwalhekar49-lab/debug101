@@ -1,4 +1,4 @@
-﻿"""Autonomous repair orchestration with temporary-copy validation."""
+"""Autonomous repair orchestration with temporary-copy validation."""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ class AutonomousRepairLoop:
     def run(self, state: AgentState) -> AgentState:
         if state.should_abort():
             state.status = state.status.__class__.ABORTED
-            state.abort_reason = "Repair iteration limit reached."
+            state.abort_reason = state.abort_reason or "Repair iteration limit reached."
             return state
 
         before = len(state.patch_candidates)
@@ -62,8 +62,6 @@ class AutonomousRepairLoop:
             "requires_behavioral_validation": bool(ok),
         }
 
-        strategy = candidate.strategy
-        self.bandit.record_reward(state.extra, strategy, 0.1 if ok else -0.2)
         return state
 
     def __call__(self, state: AgentState) -> AgentState:

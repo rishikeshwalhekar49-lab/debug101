@@ -12,6 +12,9 @@ from .client import LLMClient
 from .prompt import SYSTEM_PROMPT, build_analysis_prompt
 
 
+MAX_REVIEW_CHARS = 16000
+
+
 class SemanticAnalyzer:
     """Uses an LLM to detect silent bugs that require intent understanding."""
 
@@ -67,7 +70,18 @@ class SemanticAnalyzer:
         report = Report(files_scanned=[file_path])
         source_lines = source.splitlines()
 
-        prompt = build_analysis_prompt(self.patterns, source, file_path=file_path)
+        reviewed = source
+        if len(source) > MAX_REVIEW_CHARS:  # stay inside a free tier's tokens-per-minute limit
+            kept, size = [], 0
+            for line in source_lines:
+                size += len(line) + 8
+                if size > MAX_REVIEW_CHARS:
+                    break
+                kept.append(line)
+            reviewed = "\n".join(kept)
+            report.diagnostics.append(f"Semantic review covered lines 1-{len(kept)} of {len(source_lines)} in "
+                                      f"{file_path}; the file is too long for one request")
+        prompt = build_analysis_prompt(self.patterns, reviewed, file_path=file_path)
 
         try:
             raw_response = self.client.complete(prompt, system_prompt=SYSTEM_PROMPT)

@@ -175,11 +175,18 @@ print(f'__METRICS__:{"final_loss": 1.0}')
 # AgentState & Supervisor Integration Tests
 # ---------------------------------------------------------------------------
 
-def test_multiseed_agent_call_contract():
-    candidate = _make_candidate()
+def test_multiseed_agent_call_contract(tmp_path):
+    script = tmp_path / "train.py"
+    script.write_text("loss = 2.0\nprint(f'__METRICS__:{{\"final_loss\": {loss}}}')\n", encoding="utf-8")
+    candidate = _make_candidate(diff="""--- a/train.py
++++ b/train.py
+@@ -1,1 +1,1 @@
+-loss = 2.0
++loss = 1.0
+""")
     state = AgentState(
         run_id="run-test-01",
-        target_file="",
+        target_file=str(script),
         patch_candidates=[candidate],
     )
 
@@ -191,6 +198,13 @@ def test_multiseed_agent_call_contract():
     assert v.validator == "multiseed_stats"
     assert v.patch_candidate == candidate
     assert v.seeds_run == 3
+
+
+def test_multiseed_agent_without_a_script_never_accepts():
+    candidate = _make_candidate()
+    state = AgentState(run_id="run-test-00", target_file="", patch_candidates=[candidate])
+    verdict = MultiseedAgent(seeds=[42, 1337, 2024]).call(state).validation_verdicts[0]
+    assert verdict.accepted is False and verdict.seeds_run == 0
 
 
 def test_multiseed_agent_respects_overfit_oracle_rejection():
@@ -230,19 +244,37 @@ def test_multiseed_agent_callable_interface():
     assert out.run_id == "call-test"
 
 
-def test_supervisor_agent_validation_pipeline_registration():
+def test_supervisor_agent_validation_pipeline_registration(tmp_path):
     from silent_bug_agent.supervisor import SupervisorAgent
     from silent_bug_agent.validation.overfit_agent import OverfitOracleAgent
 
+    torch = pytest.importorskip("torch")
+    script = tmp_path / "train.py"
+    script.write_text(textwrap.dedent("""
+        import torch
+        model = torch.nn.Linear(4, 1)
+        opt = torch.optim.SGD(model.parameters(), lr=0.0)
+        for step in range(40):
+            x = torch.randn(32, 4)
+            opt.zero_grad()
+            loss = ((model(x) - x.sum(dim=1, keepdim=True)) ** 2).mean()
+            loss.backward()
+            opt.step()
+        print(f'__METRICS__:{{"final_loss": {loss.item()}}}')
+        """), encoding="utf-8")
+    candidate = _make_candidate(diff="""--- a/train.py
++++ b/train.py
+@@ -3,3 +3,3 @@
+ model = torch.nn.Linear(4, 1)
+-opt = torch.optim.SGD(model.parameters(), lr=0.0)
++opt = torch.optim.SGD(model.parameters(), lr=0.1)
+ for step in range(40):
+""")
+
     # Register as SupervisorAgent(validationagents=[OverfitOracleAgent(), MultiseedAgent()])
     # exactly as specified in the brief's contract
-    supervisor = SupervisorAgent(validationagents=[OverfitOracleAgent(), MultiseedAgent(seeds=[42, 1337, 2024])])
-
-    candidate = _make_candidate()
-    state = AgentState(
-        run_id="sup-test-01",
-        patch_candidates=[candidate],
-    )
+    supervisor = SupervisorAgent(validationagents=[OverfitOracleAgent(steps=40), MultiseedAgent(seeds=[42, 1337, 2024])])
+    state = AgentState(run_id="sup-test-01", target_file=str(script), patch_candidates=[candidate])
 
     result_state = supervisor.run(state)
     assert len(result_state.validation_verdicts) == 2
@@ -251,3 +283,10 @@ def test_supervisor_agent_validation_pipeline_registration():
     # Second verdict is from MultiseedAgent
     assert result_state.validation_verdicts[1].validator == "multiseed_stats"
     assert result_state.status == AgentStatus.DONE
+
+
+def test_supervisor_rejects_unknown_arguments():
+    from silent_bug_agent.supervisor import SupervisorAgent
+
+    with pytest.raises(TypeError):
+        SupervisorAgent(detection_agent=object())

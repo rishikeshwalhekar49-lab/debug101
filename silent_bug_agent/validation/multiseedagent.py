@@ -21,6 +21,7 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
 import numpy as np
 import scipy.stats as stats
 
+from ..repair.patch_utils import MalformedDiffError, apply_unified_diff
 from ..schemas import AgentState, PatchCandidate, ValidationVerdict
 from .sandbox import ExecutionResult, SandboxConfig, SubprocessSandbox, TelemetryForwarder
 
@@ -238,6 +239,10 @@ def apply_patch_string(original: str, patch_candidate: PatchCandidate | Any) -> 
     diff_text = getattr(patch_candidate, "diff", "")
     if not diff_text:
         return original
+    try:
+        return apply_unified_diff(original, diff_text)
+    except MalformedDiffError:
+        pass  # hand-written patches may have inexact context
 
     # Simple unified diff application
     lines = original.splitlines(keepends=True)
@@ -319,6 +324,9 @@ class MultiseedAgent:
         sandbox: Optional[SubprocessSandbox] = None,
         telemetry_forwarder: Optional[TelemetryForwarder] = None,
         prefer_test: str = "t_test",
+        measured: bool = False,
+        max_steps: Optional[int] = None,
+        script_args: Optional[List[str]] = None,
     ):
         # 3 to 5 distinct seeds as specified in the brief
         self.seeds = list(seeds) if seeds is not None else [42, 1337, 2024, 7, 99]
@@ -327,6 +335,11 @@ class MultiseedAgent:
         self.max_cpu_cores = max_cpu_cores
         self.alpha = alpha
         self.prefer_test = prefer_test
+        self.measured = measured  # run through script_runner, so any script works
+        self.max_steps = max_steps
+        self.script_args = list(script_args or [])
+        self._baselines: Dict[int, Tuple[List[float], List[ExecutionResult]]] = {}
+        self.as_file: Optional[str] = None
         self.telemetry_forwarder = telemetry_forwarder or TelemetryForwarder()
         self.sandbox = sandbox or SubprocessSandbox(
             SandboxConfig(
@@ -339,6 +352,7 @@ class MultiseedAgent:
 
     def _extract_loss(self, result: ExecutionResult) -> Optional[float]:
         """Extract final loss from telemetry or stdout numbers."""
+        report = result.run_report or {}
         if result.metrics:
             if "final_loss" in result.metrics:
                 return float(result.metrics["final_loss"])
@@ -346,6 +360,10 @@ class MultiseedAgent:
                 return float(result.metrics["loss"])
             if "losses" in result.metrics and len(result.metrics["losses"]) > 0:
                 return float(result.metrics["losses"][-1])
+
+        # A ratio does not change when a fix changes the scale of the loss
+        if report.get("loss_ratio") is not None and not report.get("nonfinite_losses"):
+            return float(report["loss_ratio"])
 
         # Scan stdout for loss patterns e.g. "Loss: 0.1234" or "final loss: 0.1234"
         matches = re.findall(r"(?:final_loss|loss|loss:)\s*[:=]?\s*([0-9]+\.[0-9]+(?:e[-+]?[0-9]+)?)", result.stdout, re.IGNORECASE)
@@ -366,7 +384,11 @@ class MultiseedAgent:
         results: List[ExecutionResult] = []
 
         for seed in seeds:
-            res = self.sandbox.run_code(code, seed=seed, timeout=self.timeout_per_run)
+            if self.measured:
+                res = self.sandbox.run_measured(code, seed=seed, max_steps=self.max_steps, timeout=self.timeout_per_run,
+                                                script_args=self.script_args, as_file=self.as_file)
+            else:
+                res = self.sandbox.run_code(code, seed=seed, timeout=self.timeout_per_run)
             results.append(res)
             loss = self._extract_loss(res)
             if res.success and loss is not None and math.isfinite(loss):
@@ -385,8 +407,11 @@ class MultiseedAgent:
         """Verify a single candidate patch against baseline code across seeds."""
         patched_code = apply_patch_string(baseline_code, candidate)
 
-        # 1. Run baseline across seeds
-        base_losses, base_results = self.evaluate_code_across_seeds(baseline_code, self.seeds)
+        # 1. Run baseline across seeds (once: every candidate is compared with the same runs)
+        key = hash(baseline_code)
+        if key not in self._baselines:
+            self._baselines[key] = self.evaluate_code_across_seeds(baseline_code, self.seeds)
+        base_losses, base_results = self._baselines[key]
 
         # 2. Run patched code across seeds
         patch_losses, patch_results = self.evaluate_code_across_seeds(patched_code, self.seeds)
@@ -428,6 +453,7 @@ class MultiseedAgent:
             effect_size = stats_comparison.effect_size
             notes = stats_comparison.notes
             extra = stats_comparison.to_dict()
+            extra["ks_test"] = compare_distributions(base_losses, patch_losses, alpha=self.alpha, prefer_test="ks_test").to_dict()
         else:
             # Baseline crashed or had NaN, but patched code succeeded reliably on all seeds!
             accepted = True
@@ -475,7 +501,11 @@ class MultiseedAgent:
             if "overfit" in val_name and is_acc and cand is not None:
                 accepted_by_overfit.add(id(cand))
 
+        judged = {id(getattr(v, "patch_candidate", None)) for v in verdicts
+                  if getattr(v, "validator", "") == "multiseed_stats"}
         for candidate in candidates:
+            if id(candidate) in judged:
+                continue
             # If OverfitOracle ran and rejected this candidate, skip multi-seed to save compute
             has_overfit_verdict = any(
                 "overfit" in getattr(v, "validator", "") and
@@ -495,16 +525,17 @@ class MultiseedAgent:
                 continue
 
             if baseline_code:
+                self.as_file = str(Path(target_path).resolve())
                 verdict = self.verify_patch(baseline_code=baseline_code, candidate=candidate)
             else:
-                # If target file is not present, evaluate against candidate confidence / self-contained code
+                # A patch is only accepted on evidence, and there is nothing here to run
                 verdict = ValidationVerdict(
                     patch_candidate=candidate,
-                    accepted=True,
+                    accepted=False,
                     validator="multiseed_stats",
-                    p_value=0.01,
-                    seeds_run=len(self.seeds),
-                    notes="Multi-seed verification passed without target file.",
+                    p_value=1.0,
+                    seeds_run=0,
+                    notes="Rejected: there is no target script to run the patch against.",
                 )
 
             verdicts.append(verdict)

@@ -1,4 +1,4 @@
-﻿"""A lightweight contextual bandit for choosing repair strategies."""
+"""A lightweight contextual bandit for choosing repair strategies."""
 
 from __future__ import annotations
 

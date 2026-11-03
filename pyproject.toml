@@ -4,13 +4,13 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "silent-bug-agent"
-version = "0.2.0"
+version = "0.3.0"
 description = "Detect, diagnose and fix silent bugs in deep learning training"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [{ name = "silent-bug-agent contributors" }]
-keywords = ["deep-learning", "pytorch", "debugging", "silent-bugs", "static-analysis"]
+keywords = ["deep-learning", "pytorch", "debugging", "silent-bugs", "static-analysis", "multi-agent", "langgraph"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
@@ -21,6 +21,11 @@ classifiers = [
 ]
 dependencies = [
     "pyyaml>=6.0",
+    "httpx>=0.27",
+    "langgraph>=0.2",
+    "pydantic>=2.0",
+    "numpy>=1.24",
+    "scipy>=1.10",
 ]
 
 [project.optional-dependencies]
@@ -29,7 +34,7 @@ torch = [
     "torchvision>=0.15",
 ]
 semantic = [
-    "anthropic>=0.18.0",
+    "chromadb>=0.5",
 ]
 dev = [
     "pytest>=7.0",

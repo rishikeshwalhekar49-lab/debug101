@@ -1,41 +1,21 @@
 # silent-bug-agent
-# Install with:  pip install -r requirements.txt
+# Recommended:  pip install -e ".[torch,semantic,dev]"
+# Or:           pip install -r requirements.txt && pip install -e .
 
-# --- Core library (Module 0) ---------------------------------------------
-# The invariant library and taxonomy need only this. If you don't want torch,
-# `pip install pyyaml` is enough for the demo and the tests.
+# --- Core: agents, LangGraph supervisor, LLM client, statistics ---------
 pyyaml>=6.0
+httpx>=0.27
+langgraph>=0.2
+pydantic>=2.0
+numpy>=1.24
+scipy>=1.10
 
-# --- Running on real PyTorch models (examples/torch_adapter.py, ------------
-# --- examples/planted_bugs_torch.py, and Module 1) -------------------------
-# For CUDA, install the matching build from https://pytorch.org first.
+# --- PyTorch (CPU build is fine; no GPU is needed) ----------------------
 torch>=2.0
-# torchvision is only used by the MNIST script pre-filled in the custom-code
-# section of examples/planted_bugs_torch.py. Remove it if you replace that script.
 torchvision>=0.15
+
+# --- Experience memory (vector search; falls back to word overlap) -----
+chromadb>=0.5
 
 # --- Testing --------------------------------------------------------------
 pytest>=7.0
-
-# ==========================================================================
-# Planned modules. Commented out because that code does not exist yet, and the
-# specific libraries are tentative: decide when each module actually starts.
-# ==========================================================================
-
-# Module 2: semantic (LLM) analyzer. Needs an API key in the environment
-# (never commit it; .env is already in .gitignore).
-# anthropic
-
-# Module 1/2: supervisor / agent orchestration
-# langgraph
-
-# Module 3: statistical tests for multi-seed comparison
-# numpy
-# scipy
-
-# Module 4: knowledge graph (or swap for a graph database)
-# networkx
-
-# Module 5: retrieval over past fixes (pick one vector store)
-# chromadb
-# faiss-cpu

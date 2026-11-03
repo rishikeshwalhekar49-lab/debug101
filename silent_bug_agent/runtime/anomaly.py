@@ -32,6 +32,7 @@ ALTERNATIVE_BUG_IDS: Dict[str, List[str]] = {
     "vanishing_gradients": ["dead_relu", "learning_rate_misconfigured", "frozen_layer_no_grad"],
     "frozen_layer_no_grad": ["learning_rate_misconfigured", "vanishing_gradients"],
     "dead_relu": ["learning_rate_misconfigured", "non_normalized_inputs"],
+    "non_normalized_inputs": ["learning_rate_misconfigured", "vanishing_gradients"],
     "learning_rate_misconfigured": ["wrong_loss_reduction", "lr_scheduler_step_order_bug", "label_data_misalignment",
                                     "missing_zero_grad"],
     "train_eval_mode_mismatch": [],
@@ -55,6 +56,19 @@ def _top(offenders: Dict[str, float], n: int = 10, key=abs) -> Dict[str, float]:
         return float("inf") if v != v else key(v)
 
     return dict(sorted(offenders.items(), key=k, reverse=True)[:n])
+
+
+def _bias_before_norm(param: str, state: TrainingState) -> bool:
+    """A bias right before BatchNorm/LayerNorm is cancelled by the normalisation, so its gradient is ~0 by design."""
+    if not param.endswith(".bias"):
+        return False
+    module = param[: -len(".bias")]
+    layers = list(state.activation_stats)
+    names = [label.split("[", 1)[0] for label in layers]
+    if module not in names:
+        return False
+    following = layers[names.index(module) + 1: names.index(module) + 2]
+    return any("Norm" in label for label in following)
 
 
 def _fmt(v: float) -> str:
@@ -101,7 +115,7 @@ class InvariantEvaluator:
             inv = next((i for i in self.invariants if i.id == "gradient_norm_bounds"), None)
             hi = getattr(inv, "max_norm", 1e3)
             big = {n: v for n, v in off.items() if v != v or v > hi}
-            small = {n: v for n, v in off.items() if n not in big}
+            small = {n: v for n, v in off.items() if n not in big and not _bias_before_norm(n, state)}
             out = []
             if big:
                 worst = next(iter(_top(big, 1)))

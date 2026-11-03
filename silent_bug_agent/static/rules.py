@@ -441,6 +441,16 @@ class GradientAccumulationMiscountRule(BaseRule):
 # ---------------------------------------------------------------------------
 # Rule 8: Wrong loss reduction (info only)
 # ---------------------------------------------------------------------------
+def _assigned_reduction(tree: ast.AST, name: str) -> Optional[str]:
+    """'sum' or 'none' if the variable is assigned one of them anywhere, e.g. `r = "mean" if ok else "sum"`."""
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == name for t in node.targets):
+            for sub in ast.walk(node.value):
+                if isinstance(sub, ast.Constant) and isinstance(sub.value, str) and sub.value.lower() in ("sum", "none"):
+                    return sub.value.lower()
+    return None
+
+
 class WrongLossReductionRule(BaseRule):
     bug_id = "wrong_loss_reduction"
     default_severity = Severity.INFO
@@ -463,6 +473,8 @@ class WrongLossReductionRule(BaseRule):
                             val = None
                             if isinstance(kw.value, ast.Constant) and isinstance(kw.value.value, str):
                                 val = kw.value.value.lower()
+                            elif isinstance(kw.value, ast.Name):
+                                val = _assigned_reduction(tree, kw.value.id)
                             if val in ("sum", "none"):
                                 nline = getattr(node, "lineno", 1)
                                 fix = pattern.typical_fix if pattern else "Verify loss reduction matches learning rate and batch size tuning."

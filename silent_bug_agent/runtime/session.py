@@ -353,6 +353,10 @@ class MonitorSession:
             out.append(f"runtime: monitored {name} ({c['optimizer'] or 'no optimizer'}) for {c['steps']} step(s): "
                        f"{c['snapshots']} training + {c['eval_snapshots']} validation snapshot(s), "
                        f"{c['layers_hooked']} layer(s) hooked, {rate}")
+        for name, ch in self.channels.items():
+            for error in ch.hooks.errors[:2]:
+                out.append(f"runtime: monitoring of {name} switched itself off after an internal error, "
+                           f"and training continued: {error}")
         if self.dispatcher.suppressed:
             out.append(f"runtime: {self.dispatcher.suppressed} transient signal(s) did not persist and were not reported")
         if self.dropped:

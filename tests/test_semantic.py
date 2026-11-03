@@ -140,3 +140,13 @@ def test_semantic_analyzer_malformed_json_diagnostic():
     report = analyzer.analyze_code(code)
     assert len(report.findings) == 0
     assert any("Failed to parse valid JSON array" in d for d in report.diagnostics)
+
+
+def test_very_long_files_are_cut_to_fit_one_request():
+    from silent_bug_agent.semantic.analyzer import MAX_REVIEW_CHARS
+
+    client = FakeLLMClient(responses=["[]"])
+    source = "\n".join(f"x_{i} = {i}" for i in range(5000))
+    report = SemanticAnalyzer(client=client).analyze_code(source, "big.py")
+    assert len(client.call_history[0]["prompt"]) < MAX_REVIEW_CHARS + 12000
+    assert any("too long" in d for d in report.diagnostics)

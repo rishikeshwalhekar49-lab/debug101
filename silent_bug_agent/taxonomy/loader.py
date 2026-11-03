@@ -46,7 +46,7 @@ def load_taxonomy(path: Path = _DEFAULT_PATH) -> List[BugPattern]:
     first) so a contributor adding a new entry gets complete feedback in
     one pass.
     """
-    raw = yaml.safe_load(Path(path).read_text())
+    raw = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
     if not isinstance(raw, list):
         raise TaxonomyValidationError("Taxonomy file must contain a top-level list of entries")
 
