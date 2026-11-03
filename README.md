@@ -145,10 +145,10 @@ Edit `.env`:
 
 ```dotenv
 # --- Groq (main provider, free tier): https://console.groq.com/keys ---
-GROQ_API_KEY=gsk_your_groq_api_key_here
+GROQ_API_KEY=paste_your_groq_key_here
 
 # --- Cerebras (backup provider, free tier): https://cloud.cerebras.ai ---
-CEREBRAS_API_KEY=csk_your_cerebras_api_key_here
+CEREBRAS_API_KEY=paste_your_cerebras_key_here
 ```
 
 > **Priority**: each agent tries **Groq** $\rightarrow$ **Cerebras** $\rightarrow$ **offline rules**. When Groq's free limit is reached, the same request goes to Cerebras.

@@ -95,7 +95,7 @@ def test_live_pipeline_uses_the_models_for_every_agent(tmp_path, monkeypatch):
     script = copy(tmp_path, "benchmark_01_missing_zero_grad.py")
     server = FakeProvider(_llm_handler(script.read_text(encoding="utf-8")))
     try:
-        monkeypatch.setenv("GROQ_API_KEY", "gsk_fake")
+        monkeypatch.setenv("GROQ_API_KEY", "not-a-real-key")
         monkeypatch.setenv("GROQ_BASE_URL", server.url)
         state = supervisor(tmp_path, dry_run=True).run(str(script))
     finally:
@@ -125,7 +125,7 @@ def test_a_harmful_model_patch_is_rejected_and_the_loop_recovers(tmp_path, monke
 
     server = FakeProvider(handler)
     try:
-        monkeypatch.setenv("GROQ_API_KEY", "gsk_fake")
+        monkeypatch.setenv("GROQ_API_KEY", "not-a-real-key")
         monkeypatch.setenv("GROQ_BASE_URL", server.url)
         state = supervisor(tmp_path, dry_run=True, max_iterations=4).run(str(script))
     finally:

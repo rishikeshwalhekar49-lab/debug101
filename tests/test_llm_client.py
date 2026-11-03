@@ -15,7 +15,7 @@ from silent_bug_agent.semantic.client import (
 )
 from silent_bug_agent.semantic.router import ModelRouter, TASK_MODELS
 
-SECRET = "gsk_test_secret_value_123"
+FAKE_KEY = "not-a-real-key"
 
 
 @pytest.fixture
@@ -41,12 +41,12 @@ def test_extract_json_handles_fences_and_prose():
 
 def test_complete_sends_openai_request_and_bearer_key(provider):
     server = provider(lambda body: chat_reply("hello"))
-    client = OpenAICompatibleClient(server.url, SECRET, "openai/gpt-oss-120b", provider="groq",
+    client = OpenAICompatibleClient(server.url, FAKE_KEY, "openai/gpt-oss-120b", provider="groq",
                                     reasoning_effort="medium", extra_body={"include_reasoning": False})
     assert client.complete("hi", "be brief") == "hello"
     request = server.requests[0]
     assert request["path"] == "/v1/chat/completions"
-    assert request["authorization"] == f"Bearer {SECRET}"
+    assert request["authorization"] == f"Bearer {FAKE_KEY}"
     body = request["body"]
     assert body["model"] == "openai/gpt-oss-120b"
     assert body["messages"][0] == {"role": "system", "content": "be brief"}
@@ -62,7 +62,7 @@ def test_complete_json_uses_strict_schema_then_falls_back_to_json_mode(provider)
         return chat_reply('{"ok": true}')
 
     server = provider(handler)
-    client = OpenAICompatibleClient(server.url, SECRET, "m")
+    client = OpenAICompatibleClient(server.url, FAKE_KEY, "m")
     schema = {"type": "object", "properties": {"ok": {"type": "boolean"}}, "required": ["ok"], "additionalProperties": False}
     assert client.complete_json("x", schema=schema) == {"ok": True}
     kinds = [r["body"]["response_format"]["type"] for r in server.requests]
@@ -73,13 +73,13 @@ def test_complete_json_uses_strict_schema_then_falls_back_to_json_mode(provider)
 def test_rate_limit_and_auth_errors_never_show_the_key(provider):
     limited = provider(lambda body: (429, {"error": {"message": "rate limit"}}, {"retry-after": "999"}))
     with pytest.raises(LLMRateLimited) as caught:
-        OpenAICompatibleClient(limited.url, SECRET, "m", max_retries=0).complete("x")
-    assert SECRET not in str(caught.value)
+        OpenAICompatibleClient(limited.url, FAKE_KEY, "m", max_retries=0).complete("x")
+    assert FAKE_KEY not in str(caught.value)
     refused = provider(lambda body: (401, {"error": {"message": "invalid key"}}, {}))
-    client = OpenAICompatibleClient(refused.url, SECRET, "m")
+    client = OpenAICompatibleClient(refused.url, FAKE_KEY, "m")
     with pytest.raises(LLMAuthError) as caught:
         client.complete("x")
-    assert SECRET not in str(caught.value) and SECRET not in repr(client)
+    assert FAKE_KEY not in str(caught.value) and FAKE_KEY not in repr(client)
 
 
 def test_short_rate_limit_is_retried(provider):
@@ -90,14 +90,14 @@ def test_short_rate_limit_is_retried(provider):
         return (429, {"error": {"message": "slow down"}}, {"retry-after": "0"}) if len(calls) == 1 else chat_reply("done")
 
     server = provider(handler)
-    assert OpenAICompatibleClient(server.url, SECRET, "m").complete("x") == "done"
+    assert OpenAICompatibleClient(server.url, FAKE_KEY, "m").complete("x") == "done"
     assert len(calls) == 2
 
 
 def test_empty_reply_is_an_error_not_an_answer(provider):
     server = provider(lambda body: chat_reply(""))
     with pytest.raises(LLMBadResponse):
-        OpenAICompatibleClient(server.url, SECRET, "m").complete("x")
+        OpenAICompatibleClient(server.url, FAKE_KEY, "m").complete("x")
 
 
 def test_router_is_offline_without_keys():
@@ -110,8 +110,8 @@ def test_router_is_offline_without_keys():
 def test_router_falls_over_from_groq_to_cerebras(provider, monkeypatch):
     groq = provider(lambda body: (429, {"error": {"message": "daily limit"}}, {"retry-after": "999"}))
     cerebras = provider(lambda body: chat_reply('{"answer": 42}'))
-    monkeypatch.setenv("GROQ_API_KEY", SECRET)
-    monkeypatch.setenv("CEREBRAS_API_KEY", "csk_other")
+    monkeypatch.setenv("GROQ_API_KEY", FAKE_KEY)
+    monkeypatch.setenv("CEREBRAS_API_KEY", "not-a-real-key-either")
     monkeypatch.setenv("GROQ_BASE_URL", groq.url)
     monkeypatch.setenv("CEREBRAS_BASE_URL", cerebras.url)
     router = ModelRouter()
@@ -124,14 +124,14 @@ def test_router_falls_over_from_groq_to_cerebras(provider, monkeypatch):
 
 def test_router_raises_when_every_provider_fails(provider, monkeypatch):
     groq = provider(lambda body: (500, {"error": {"message": "down"}}, {}))
-    monkeypatch.setenv("GROQ_API_KEY", SECRET)
+    monkeypatch.setenv("GROQ_API_KEY", FAKE_KEY)
     monkeypatch.setenv("GROQ_BASE_URL", groq.url)
     with pytest.raises(LLMUnavailable):
         ModelRouter().task("perception").complete("x")
 
 
 def test_task_assignment_and_override(monkeypatch):
-    monkeypatch.setenv("GROQ_API_KEY", SECRET)
+    monkeypatch.setenv("GROQ_API_KEY", FAKE_KEY)
     router = ModelRouter()
     assert [c.model for c in router.choices("fix")] == ["openai/gpt-oss-120b"]
     assert [c.model for c in router.choices("perception")] == ["openai/gpt-oss-20b"]
