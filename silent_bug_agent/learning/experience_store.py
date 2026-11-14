@@ -39,20 +39,33 @@ def _words(text: str) -> set:
 class ExperienceStore:
     def __init__(self, home: Optional[Path] = None, *, use_vectors: bool = True) -> None:
         self.home = Path(home) if home else data_home()
-        self.home.mkdir(parents=True, exist_ok=True)
+        try:
+            self.home.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            pass
         self.path = self.home / "experience.sqlite3"
         self.use_vectors = use_vectors
         self.notes: List[str] = []
         self._collection: Any = None
         self._vector_failed = False
         self._lock = threading.Lock()
+        self._fallback_db: Optional[sqlite3.Connection] = None
         with closing(self._connect()) as db, db:
             db.executescript(_SCHEMA)
 
     def _connect(self) -> sqlite3.Connection:
-        db = sqlite3.connect(self.path, timeout=30)
-        db.row_factory = sqlite3.Row
-        return db
+        if self._fallback_db is not None:
+            return self._fallback_db
+        try:
+            db = sqlite3.connect(self.path, timeout=10)
+            db.row_factory = sqlite3.Row
+            return db
+        except Exception as exc:
+            self.notes.append(f"memory: SQLite file failed ({exc}), using in-memory fallback")
+            self._fallback_db = sqlite3.connect(":memory:", check_same_thread=False)
+            self._fallback_db.row_factory = sqlite3.Row
+            self._fallback_db.executescript(_SCHEMA)
+            return self._fallback_db
 
     # ---------------------------------------------------------------- vectors
     def _vectors(self) -> Any:

@@ -55,6 +55,22 @@ def load_env(path: Optional[Path] = None, *, force: bool = False) -> Optional[Pa
 
 def data_home() -> Path:
     """Where the experience memory lives; `SBA_HOME` overrides it."""
-    home = Path(os.environ.get("SBA_HOME") or Path.home() / ".silent_bug_agent")
-    home.mkdir(parents=True, exist_ok=True)
-    return home
+    candidate = os.environ.get("SBA_HOME")
+    if candidate:
+        home = Path(candidate)
+        home.mkdir(parents=True, exist_ok=True)
+        return home
+
+    try:
+        home = Path.home() / ".silent_bug_agent"
+        home.mkdir(parents=True, exist_ok=True)
+        # Test write permission to avoid failing later on SQLite open
+        test_file = home / ".write_check"
+        test_file.write_text("ok", encoding="utf-8")
+        test_file.unlink()
+        return home
+    except Exception:
+        # Fallback to local workspace folder
+        fallback = _PACKAGE_PARENT / ".silent_bug_agent"
+        fallback.mkdir(parents=True, exist_ok=True)
+        return fallback

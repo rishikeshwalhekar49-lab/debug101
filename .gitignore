@@ -14,7 +14,7 @@ env/
 # Secrets: API keys live in .env, which must never be committed
 .env
 *.key
-
+DL.mp4
 # Datasets and model files: the MNIST example in planted_bugs_torch.py
 # downloads into ./data when you run it
 data/
@@ -37,3 +37,7 @@ concepts/
 # Agent memory and backups made by `fix`
 .silent_bug_agent/
 *.py.orig
+
+# Node / TUI dependencies
+node_modules/
+.npm/

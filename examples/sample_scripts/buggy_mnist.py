@@ -6,6 +6,7 @@ from torchvision import datasets, transforms
 # Missing normalization
 transform = transforms.Compose([
     transforms.ToTensor(),
+    transforms.Normalize((0.1307,), (0.3081,))
 ])
 
 try:
@@ -21,7 +22,7 @@ class BuggyCNN(nn.Module):
         self.pool = nn.MaxPool2d(2, 2)
         self.fc1 = nn.Linear(32 * 14 * 14, 128)
         self.fc2 = nn.Linear(128, 10)
-        self.dropout = nn.Dropout(0.5)
+        self.dropout = nn.Dropout(0.2)
 
     def forward(self, x):
         x = self.pool(torch.relu(self.conv1(x)))
@@ -29,7 +30,7 @@ class BuggyCNN(nn.Module):
         x = torch.relu(self.fc1(x))
         x = self.dropout(x)
         # Softmax before CrossEntropyLoss
-        x = torch.softmax(self.fc2(x), dim=1)
+        x = self.fc2(x)
         return x
 
 model = BuggyCNN()

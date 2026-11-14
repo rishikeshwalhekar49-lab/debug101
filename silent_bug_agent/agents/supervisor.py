@@ -69,10 +69,12 @@ class SupervisorAgent:
     """Runs one training script through detection, diagnosis, repair, validation and memory."""
 
     def __init__(self, config: Optional[PipelineConfig] = None, *, router: Optional[ModelRouter] = None,
-                 memory: Optional[ExperienceStore] = None, detection_agent: Any = None) -> None:
+                 memory: Optional[ExperienceStore] = None, detection_agent: Any = None,
+                 emitter: Any = None) -> None:
         self.config = config or PipelineConfig()
         self.router = router or ModelRouter(offline=self.config.offline)
         self.memory = memory or ExperienceStore(use_vectors=self.config.use_vectors)
+        self.emitter = emitter
         self.detection_agent = detection_agent or RuntimeMonitorAgent(
             MonitorConfig(max_steps=self.config.monitor_steps, max_seconds=self.config.timeout_per_run * 2))
         self.static = StaticAnalyzer()
@@ -127,6 +129,8 @@ class SupervisorAgent:
 
     # ---------------------------------------------------------------- nodes
     def _perception(self, graph_state: GraphState) -> GraphState:
+        if self.emitter:
+            self.emitter.phase("perception", "start")
         state = graph_state["state"]
         path = Path(state.target_file)
         state.detection_report = self.static.analyze_file(path)
@@ -146,6 +150,8 @@ class SupervisorAgent:
         elif not [f for f in state.detection_report.findings if f.bug_id not in REPORT_ONLY]:
             state.status = AgentStatus.DONE
             state.extra["outcome"] = "no_bug_found"
+        if self.emitter:
+            self.emitter.phase("perception", "done", findings=len(state.detection_report.findings))
         return {"state": state}
 
     def _consolidate(self, state: AgentState) -> None:
@@ -162,6 +168,8 @@ class SupervisorAgent:
             state.detection_report.diagnostics.append(f"perception: LLM summary unavailable ({exc})")
 
     def _diagnosis(self, graph_state: GraphState) -> GraphState:
+        if self.emitter:
+            self.emitter.phase("diagnosis", "start")
         state = self.diagnosis_agent(graph_state["state"])
         repairable = [h for h in state.hypotheses if h.bug_id not in REPORT_ONLY]
         side_effects = set(state.extra.get("side_effects", []))
@@ -170,9 +178,18 @@ class SupervisorAgent:
         if not state.hypotheses:
             state.status = AgentStatus.FAILED
             state.abort_reason = "Diagnosis produced no repairable hypothesis."
+        if self.emitter:
+            self.emitter.phase("diagnosis", "done", hypotheses=len(state.hypotheses))
+            for i, h in enumerate(state.hypotheses):
+                self.emitter.hypothesis(
+                    rank=i + 1, bug_id=h.bug_id, confidence=h.confidence,
+                    description=h.description, diagnosed_by=h.extra.get("diagnosed_by")
+                )
         return {"state": state}
 
     def _repair(self, graph_state: GraphState) -> GraphState:
+        if self.emitter:
+            self.emitter.phase("repair", "start")
         state = graph_state["state"]
         top = self.fix_agent._next_hypothesis(state)
         if top is not None:
@@ -187,6 +204,14 @@ class SupervisorAgent:
                 {"bug_id": candidate.hypothesis_bug_id, "diff": candidate.diff,
                  "reason": str(state.extra.get("repair_loop_result", {}).get("message"))})
             self._record(state, candidate, None)
+        if self.emitter:
+            if state.patch_candidates:
+                cand = state.patch_candidates[-1]
+                self.emitter.patch(
+                    bug_id=cand.hypothesis_bug_id, strategy=cand.strategy.value,
+                    source=cand.source, diff=cand.diff, confidence=cand.confidence
+                )
+            self.emitter.phase("repair", "done")
         return {"state": state}
 
     def _bug_gone(self, state: AgentState, candidate: PatchCandidate, patched: str) -> Optional[bool]:
@@ -217,15 +242,31 @@ class SupervisorAgent:
         source = Path(state.target_file).read_text(encoding="utf-8")
         patched = apply_unified_diff(source, candidate.diff)
         verdicts: List[ValidationVerdict] = state.validation_verdicts
+        if self.emitter:
+            self.emitter.phase("gate1", "start")
         self.overfit(state)
         overfit = verdicts[-1]
+        if self.emitter:
+            self.emitter.phase("gate1", "done", accepted=overfit.accepted)
+            self.emitter.phase("gate2", "start")
         self.multiseed(state) if overfit.accepted else self._skip_gate_two(state, candidate)
         multiseed = verdicts[-1]
+        if self.emitter:
+            self.emitter.phase("gate2", "done", accepted=multiseed.accepted)
         bug_gone = self._bug_gone(state, candidate, patched) if overfit.accepted else None
         hypothesis = next((h for h in state.hypotheses if h.bug_id == candidate.hypothesis_bug_id), None)
         strong = hypothesis is None or hypothesis.extra.get("max_severity", "warning") != "info"
         final = self.analyzer.analyze(candidate, overfit, multiseed, bug_gone, strong)
         verdicts.append(final)
+        if self.emitter:
+            self.emitter.verdict(
+                bug_id=candidate.hypothesis_bug_id,
+                accepted=final.accepted,
+                validator=final.validator,
+                p_value=multiseed.p_value,
+                effect_size=multiseed.effect_size,
+                notes=final.notes,
+            )
         candidate.extra.update({"validated": True, "status": "accepted" if final.accepted else "rejected"})
         return {"state": state}
 
@@ -260,6 +301,8 @@ class SupervisorAgent:
         self.memory.score_lessons("fix", accepted)
 
     def _memory(self, graph_state: GraphState) -> GraphState:
+        if self.emitter:
+            self.emitter.phase("memory", "start")
         state = graph_state["state"]
         accepted = state.accepted_patches
         if accepted:
@@ -277,7 +320,7 @@ class SupervisorAgent:
             state.extra.setdefault("outcome", "not_fixed")
             finals = [v for v in state.validation_verdicts if v.validator == "validation_analyzer"]
             state.abort_reason = state.abort_reason or (f"No patch passed validation. Last verdict: {finals[-1].notes}"
-                                                        if finals else state.extra.get("repair_error")) \
+                                                         if finals else state.extra.get("repair_error")) \
                 or "No patch passed validation."
             if state.patch_candidates and state.validation_verdicts:
                 last = state.patch_candidates[-1]
@@ -286,6 +329,8 @@ class SupervisorAgent:
                     self._record(state, last, final)
         if self.memory.count() and self.memory.count() % self.config.meta_every == 0:
             state.extra["meta"] = MetaEvolutionAgent(self.memory, self.router.task("meta")).run().to_dict()
+        if self.emitter:
+            self.emitter.phase("memory", "done")
         return {"state": state}
 
     # --------------------------------------------------------------- routing

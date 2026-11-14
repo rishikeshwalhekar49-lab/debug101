@@ -32,7 +32,7 @@ class Classifier(nn.Module):
         out = self.fc2(h)
         if self.use_softmax:
             # BUG: Applying softmax before CrossEntropyLoss
-            return torch.softmax(out, dim=-1)
+            return out
         # FIX: Output raw logits
         return out
 

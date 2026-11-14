@@ -65,7 +65,7 @@ def run():
         model.eval()
     else:
         # BUG: Model remains in train() mode during validation, corrupting test metrics
-        pass
+        model.eval()
 
     with torch.no_grad():
         val_out = model(x_val)
