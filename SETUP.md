@@ -11,7 +11,14 @@ This guide covers everything required to install, configure, verify, and run the
 | **Python** | 3.10+ | 3.11 or 3.12 | Core multi-agent pipeline & PyTorch |
 | **Node.js** | 18.0.0+ | 20.x or 22.x | Required for the interactive Pastel + Ink TUI |
 | **npm** | 9.x+ | 10.x+ | Package manager for `tui/` |
-| **Operating System** | Windows 10/11, macOS, or Linux | Any | Fully CPU-compatible (no dedicated GPU required) |
+| **Operating System** | Windows 10/11, macOS (Apple Silicon M1-M4 & Intel), or Linux | Any | Fully CPU-compatible (no dedicated GPU required) |
+
+> [!TIP]
+> **macOS Prerequisites via Homebrew**:
+> If you don't have Python 3 or Node.js installed yet on macOS, install them with [Homebrew](https://brew.sh):
+> ```bash
+> brew install python node
+> ```
 
 ---
 
@@ -63,7 +70,9 @@ pip install -e ".[torch,semantic,dev]"
 ```
 
 > [!NOTE]
-> Everything runs on standard CPUs. If you want CUDA acceleration on an Nvidia GPU, install the matching PyTorch wheel from [pytorch.org](https://pytorch.org) (e.g. `pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121`).
+> - **macOS / Apple Silicon**: Native `arm64` wheels for PyTorch and ChromaDB install automatically via pip. Apple Silicon Metal Performance Shaders (`mps`) and standard CPU execution are both supported out of the box with zero extra drivers.
+> - **Linux / Windows with Nvidia GPU**: If you want CUDA acceleration, install the matching PyTorch wheel from [pytorch.org](https://pytorch.org) (e.g. `pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121`).
+> - **CPU only**: Everything runs completely on CPU without any dedicated GPU required.
 
 ---
 
@@ -254,6 +263,12 @@ cd ..
 ```dotenv
 SBA_HOME=./.silent_bug_agent
 ```
+
+### Q: macOS: `command not found: python` or points to system Python
+**Fix**: On macOS, modern Python installs as `python3`. Always use `python3 -m venv .venv` when creating the environment. Once activated (`source .venv/bin/activate`), `python` will automatically resolve to the virtual environment's Python interpreter.
+
+### Q: macOS: Terminal rendering in Terminal.app, iTerm2, Warp, Ghostty
+**Fix**: The Pastel + Ink TUI uses standard 24-bit ANSI truecolor. It works out of the box across Terminal.app, iTerm2, Warp, Ghostty, Kitty, and Alacritty. For optimal visual display of spinners and step icons, ensure UTF-8 encoding is enabled in your terminal preferences (standard default on macOS).
 
 ### Q: Does the multi-seed validation gate take too long?
 **Fix**: Gate 2 runs multiple isolated subprocesses across distinct random seeds to compute statistical tests ($p < 0.05$). For rapid local prototyping, decrease seed counts:
