@@ -26,8 +26,8 @@ from ..diagnosis.bridge import category_of
 from ..findings import Report, merge_reports
 from ..learning.experience_store import ExperienceStore
 from ..repair.loop import AutonomousRepairLoop
-from ..repair.patch_utils import apply_patch_to_file, apply_unified_diff
-from ..repair.pending import BUNDLED_EXAMPLE_NOTE, bundled_example, save_pending
+from ..repair.patch_utils import MalformedDiffError, apply_patch_to_file, apply_unified_diff
+from ..repair.pending import bundled_example, copy_path, save_pending
 from ..schemas import AgentState, AgentStatus, PatchCandidate, ValidationVerdict
 from ..semantic.analyzer import SemanticAnalyzer
 from ..semantic.client import LLMError
@@ -45,6 +45,8 @@ from .runtime_monitor_agent import MonitorConfig, RuntimeMonitorAgent
 # Reported, but a repair would not change what the model learns.
 REPORT_ONLY = {"unset_random_seed"}
 REWARD_ACCEPTED, REWARD_REJECTED, REWARD_INVALID = 1.0, -0.5, -1.0
+USER_DECLINED = ("The user was shown this patch, turned it down and asked for a different fix. "
+                 "Propose a genuinely different change, not a rewording of this one.")
 
 
 @dataclass
@@ -58,6 +60,8 @@ class PipelineConfig:
     script_args: List[str] = field(default_factory=list)
     dry_run: bool = False
     keep_pending: bool = False  # with dry_run: keep the validated patch so `apply` can write it after approval
+    # patches the user turned down, as {"diff", "bug_id"}: the repair must come up with something else
+    rejected_patches: List[Dict[str, str]] = field(default_factory=list)
     offline: bool = False
     meta_every: int = 5
     use_vectors: bool = True
@@ -111,6 +115,7 @@ class SupervisorAgent:
         state = AgentState(run_id=uuid.uuid4().hex[:12], target_file=str(target_file),
                            max_iterations=self.config.max_iterations, status=AgentStatus.RUNNING,
                            extra={"script_args": list(self.config.script_args)})
+        self._exclude_declined(state)
         result = self.graph.invoke({"state": state}, config={"recursion_limit": 20 + 8 * self.config.max_iterations})
         final: AgentState = result["state"]
         final.extra["llm"] = self.router.summary()
@@ -118,6 +123,24 @@ class SupervisorAgent:
         return final
 
     __call__ = run
+
+    def _exclude_declined(self, state: AgentState) -> None:
+        """Mark the patches the user turned down as already tried, so the same result is never offered
+        again, and pass the reason to the fix agent as feedback."""
+        if not self.config.rejected_patches:
+            return
+        try:
+            original = Path(state.target_file).read_text(encoding="utf-8")
+        except (OSError, UnicodeError):
+            return
+        for item in self.config.rejected_patches:
+            try:
+                declined = apply_unified_diff(original, item["diff"])
+            except (MalformedDiffError, KeyError):
+                continue  # it was made for another version of the file
+            state.extra.setdefault("tried_patches", []).append(self.fix_agent._digest(declined))
+            state.extra.setdefault("repair_feedback", []).append(
+                {"bug_id": item.get("bug_id", ""), "diff": item["diff"], "reason": USER_DECLINED})
 
     def run_until_clean(self, target_file: str, *, max_rounds: int = 3) -> List[AgentState]:
         """Fix one bug per round, re-detecting each time, because scripts often have several."""
@@ -314,13 +337,14 @@ class SupervisorAgent:
             self._record(state, candidate, verdict)
             state.extra["outcome"] = "fixed"
             state.status = AgentStatus.DONE
-            if bundled_example(Path(state.target_file)):
-                state.extra["apply_blocked"] = BUNDLED_EXAMPLE_NOTE
-            elif not self.config.dry_run:
+            protected = bundled_example(Path(state.target_file))
+            if protected:  # never edited: `apply` writes the fixed version to a copy instead
+                state.extra["copy_to"] = str(copy_path(Path(state.target_file)))
+            if not self.config.dry_run and not protected:
                 backup = apply_patch_to_file(state.target_file, candidate.diff)
                 state.extra["patch_applied"] = True
                 state.extra["backup"] = str(backup)
-            elif self.config.keep_pending:
+            elif self.config.keep_pending or (protected and not self.config.dry_run):
                 save_pending(Path(state.target_file), candidate.diff, bug_id=candidate.hypothesis_bug_id,
                              run_id=state.run_id)
                 state.extra["pending_patch"] = True
@@ -391,7 +415,7 @@ def describe_state(state: AgentState) -> Dict[str, Any]:
                             "source": accepted[-1].patch_candidate.source,
                             "confidence": accepted[-1].patch_candidate.confidence} if accepted else None),
         "pending_patch": bool(state.extra.get("pending_patch")),
-        "apply_blocked": state.extra.get("apply_blocked"),
+        "copy_to": state.extra.get("copy_to"),
         "llm": state.extra.get("llm"),
         "llm_notes": state.extra.get("llm_notes", []),
         "summary": state.extra.get("perception_summary"),

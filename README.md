@@ -166,7 +166,7 @@ python -m silent_bug_agent doctor --live
 
 The CLI has four core commands (`scan`, `monitor`, `diagnose`, `fix`), plus `apply`, `wsp`, `doctor` and `ui`. Arguments for your own script go after `--`.
 
-> **The bundled examples are protected.** The tests and the results below depend on the bugs planted in `examples/`, so `fix` and `apply` never edit those files: they show the validated patch and stop. To see a fix applied, work on a copy:
+> **The bundled examples are protected.** The tests and the results below depend on the bugs planted in `examples/`, so those files are never edited. `fix` validates and shows the patch, and `apply` writes the fixed version to `fixed_examples/<name>.py` instead. To have a file patched in place, work on your own script or a copy:
 > ```bash
 > cp examples/sample_scripts/buggy_mnist.py my_train.py      # Windows: copy examples\sample_scripts\buggy_mnist.py my_train.py
 > ```
@@ -204,9 +204,14 @@ python -m silent_bug_agent fix my_train.py --dry-run
 # ...then write exactly the patch that was validated and shown
 python -m silent_bug_agent apply my_train.py
 
+# Not happy with the patch? Turn it down and look for a different one
+python -m silent_bug_agent fix my_train.py --dry-run --another
+
 # Or in one step: validate and write, for up to --max-rounds (3) bugs
 python -m silent_bug_agent fix my_train.py --max-iter 3
 ```
+
+`--another` never offers a patch you turned down again. With an LLM key the model is told what was declined and asked for a different change. Without a key each bug has one rule-based fix, so the answer is usually "no other fix", or a fix for a different bug in the same script.
 
 Whenever a file is written, the original is kept beside it as `<name>.py.orig`. `apply` refuses if the script changed after the patch was validated.
 
@@ -235,7 +240,7 @@ A keyboard-driven front end over the same commands, built with Ink. It needs Nod
 cd tui && npm ci && npm run build && cd ..
 python -m silent_bug_agent ui
 ```
-Its Fix screen always validates first and asks before writing; choosing "Apply" runs the `apply` command above.
+Its Fix screen always validates first, then asks: apply the fix, do not apply, or try another fix. Those run the `apply` and `--another` commands above.
 
 ---
 
@@ -318,7 +323,7 @@ AgenticDLDebugger/
 │   │   └── benchmark_08_unnormalized_inputs.py
 │   ├── benchmark_hooks.py            # Module 1 overhead benchmark
 │   └── evaluate_pipeline.py          # Repair rate and damage rate on the benchmarks
-└── tests/                            # 426 automated tests (pytest)
+└── tests/                            # 430 automated tests (pytest)
 ```
 
 ---

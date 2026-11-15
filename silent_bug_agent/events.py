@@ -102,11 +102,12 @@ class EventEmitter:
 
     def accepted_patch(self, bug_id: str, strategy: str, source: str, diff: str, confidence: float, *,
                        applied: bool, backup: Optional[str] = None, pending: bool = False,
-                       blocked: Optional[str] = None) -> None:
+                       copy_to: Optional[str] = None) -> None:
         """Emit the one patch that passed validation, and what happened to the file.
 
         ``applied`` is true only if the script was written. ``pending`` means the patch is
-        kept for the ``apply`` command. ``blocked`` gives the reason it cannot be applied."""
+        kept for the ``apply`` command. ``copy_to`` is set for a bundled example: ``apply``
+        leaves that file alone and writes the fixed version to this path."""
         self._emit({
             "event": "accepted_patch",
             "bug_id": bug_id,
@@ -117,12 +118,13 @@ class EventEmitter:
             "applied": applied,
             "backup": backup,
             "pending": pending,
-            "blocked": blocked,
+            "copy_to": copy_to,
         })
 
-    def applied(self, target: str, backup: Optional[str], bug_id: str = "") -> None:
-        """Emit that ``apply`` wrote a pending patch to the script."""
-        self._emit({"event": "applied", "target": target, "backup": backup, "bug_id": bug_id})
+    def applied(self, written: str, backup: Optional[str], bug_id: str = "", copy: bool = False) -> None:
+        """Emit that ``apply`` wrote a pending patch. ``written`` is the file that now holds the fix;
+        ``copy`` is true when that is a copy and the original was left as it was."""
+        self._emit({"event": "applied", "written": written, "backup": backup, "bug_id": bug_id, "copy": copy})
 
     def weight_report(self, data: Dict[str, Any]) -> None:
         """Emit a read-only weight inspection report."""

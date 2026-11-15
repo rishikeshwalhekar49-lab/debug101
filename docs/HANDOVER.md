@@ -10,8 +10,9 @@ The 2026-11-14 entry below says "Broken or risky: None". That was not true. Afte
 
 ### Done:
 - **Restored the five example files** from commit `b825c25`.
-- **Bundled examples are now protected.** `fix` and `apply` never edit a file under `examples/`; they show the validated patch and stop. (`repair/pending.py: bundled_example`)
+- **Bundled examples are now protected.** `fix` and `apply` never edit a file under `examples/`. `apply` writes the fixed version to `fixed_examples/<name>.py` instead. (`repair/pending.py: bundled_example`)
 - **Approval is real.** `fix --dry-run` validates a patch, writes nothing, and keeps the patch. The new `apply <script>` command writes exactly that patch, and refuses if the file changed. The TUI Fix screen now uses this pair; before, its menu appeared after the file had already been written, and "Keep Dry-Run" reported "Target file unchanged" when it had changed.
+- **Three-choice menu in the TUI** (requested by the team, D-010): apply the fix, do not apply, or try another fix. "Try another fix" is `fix --dry-run --another`: the declined patch is remembered and never offered again. The `[HYBRID]`/`[RULES]`/`[LLM]` label next to the patch was removed. Leaving a screen now stops the Python command it started.
 - **Event stream fixed** (`--events`): hypotheses and verdicts are sent once (they were sent twice); candidate patches carry their real bug, strategy and confidence; a separate `accepted_patch` event says whether the file was written. Before, the TUI could show a *rejected* candidate as "validated".
 - **WSP cut back to a read-only weight inspector.** `wsp/editor.py` and `wsp/dual_supervisor.py` are deleted. Reasons and evidence: `docs/features/FEATURE-002_wsp_weight_space_programming.md` and decision D-008. Weights are now read from a real sandboxed training run or from a checkpoint loaded with `weights_only=True`.
 - **Memory fallback no longer crashes.** The in-memory SQLite fallback raised "Cannot operate on a closed database" on its second use.

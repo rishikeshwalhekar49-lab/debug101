@@ -41,3 +41,6 @@ concepts/
 # Node / TUI dependencies
 node_modules/
 .npm/
+
+# Fixed copies of bundled examples, written by `apply`
+fixed_examples/

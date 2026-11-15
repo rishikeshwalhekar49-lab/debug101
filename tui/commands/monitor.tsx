@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Box, Text, useApp, useInput } from 'ink';
 import Spinner from 'ink-spinner';
 import z from 'zod';
-import { resolveTarget, runPython, type FindingData, type SbaEvent } from '../utils/pythonBridge.js';
+import { resolveTarget, runPython, type FindingData, type SbaEvent, stopRunning } from '../utils/pythonBridge.js';
 import { SeverityBadge } from '../components/Badge.js';
 
 export const options = z.object({
@@ -47,6 +47,8 @@ export default function Monitor({
       exit();
     }
   });
+
+  useEffect(() => () => stopRunning(), []); // leaving the screen stops the command
 
   useEffect(() => {
     if (!script) {

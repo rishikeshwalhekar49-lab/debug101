@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Box, Text, useApp, useInput } from 'ink';
 import Spinner from 'ink-spinner';
 import z from 'zod';
-import { resolveTarget, runPython, type WeightReportData } from '../utils/pythonBridge.js';
+import { resolveTarget, runPython, type WeightReportData, stopRunning } from '../utils/pythonBridge.js';
 import { Badge, SeverityBadge } from '../components/Badge.js';
 
 export const description = 'Inspect a model\'s weights for anomalies (read-only)';
@@ -43,6 +43,8 @@ export default function Wsp({
     }
     if (input === 'q') exit();
   });
+
+  useEffect(() => () => stopRunning(), []); // leaving the screen stops the command
 
   useEffect(() => {
     if (!script) {

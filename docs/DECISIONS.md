@@ -104,3 +104,18 @@
 - Chosen Option: `fix --dry-run` validates and stores the patch (`repair/pending.py`) without writing; `apply` writes exactly that patch, only if the file's hash is unchanged. The UI always uses this pair. The bundled examples under `examples/` are never edited by either command.
 - Trade-offs: in the UI, one bug is fixed per run instead of up to three.
 - Revisit if: users want multi-round fixing with a single approval.
+
+## [D-010]: The approval menu has three real choices, and bundled examples get a fixed copy
+- Date: 2026-11-15
+- Context: D-009 made the UI refuse to apply anything to a bundled example and removed the old "Retry Fix" choice, because that choice did nothing. The team's demos start from the bundled examples, so the screen ended with "the file was not changed" and no choice at all. The team asked for the three choices back: apply, do not apply, try another fix.
+- Options Considered:
+  1) Let the UI edit the bundled examples again
+  2) Keep refusing, and tell people to copy the file by hand
+  3) Show the menu everywhere; for a bundled example write the fixed version to a copy; make "try another fix" a real second search
+- Chosen Option: 3
+- Why: Option 1 is what broke 15 tests. Option 2 makes the demo end without the step people want to see. Option 3 gives the full flow and the fixtures stay intact.
+- How:
+  - `apply` on a bundled example writes `fixed_examples/<name>.py` and leaves the example alone.
+  - `fix --another` moves the pending patch to a list of declined patches and seeds the fix agent's existing `tried_patches` list with them, so the same result cannot be offered twice. The LLM receives the declined patch as feedback.
+- Trade-offs: "another fix" depends on the LLM. Offline there is one rule per bug, so the honest answer is often "no other fix". An LLM can also return a patch that differs only in wording; it counts as different unless the resulting file is identical.
+- Revisit if: users expect several alternatives side by side rather than one at a time.

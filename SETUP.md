@@ -163,7 +163,13 @@ python -m silent_bug_agent ui
 * **Go Back**: Press `Esc` or `b`
 * **Quit**: Press `q`
 
-The **Fix** screen always validates a patch first and shows it while your file is still unchanged. It writes the file only if you then choose "Apply this patch to the file". The bundled examples in the menu are protected and are never edited (see below), so pick "Custom file path" with a copy to see a patch applied.
+The **Fix** screen always validates a patch first and shows it while your file is still unchanged. It then asks what to do:
+
+* **Apply the fix** writes exactly the patch shown, and keeps the original as `<name>.py.orig`.
+* **Do not apply** leaves the file as it is.
+* **Try another fix** turns this patch down and runs the pipeline again for a different one. Without an LLM key each bug has a single rule-based fix, so there may be no alternative; the screen says so.
+
+For the bundled examples in the menu, "Apply the fix" writes the fixed version to `fixed_examples/<name>.py` and leaves the example itself alone, because the tests rely on its planted bug. Leaving a screen with `Esc`, `b` or `q` stops the command it was running.
 
 ---
 
@@ -200,7 +206,7 @@ python -m silent_bug_agent diagnose examples/sample_scripts/buggy_mnist.py
 Runs the full supervisor loop: Perception $\rightarrow$ Diagnosis $\rightarrow$ Patch Synthesis $\rightarrow$ Gate 1 (Overfit Oracle) $\rightarrow$ Gate 2 (Multi-Seed Sandbox).
 
 > [!IMPORTANT]
-> **Work on a copy, not on the bundled examples.** The tests and the published results depend on the bugs planted in `examples/`. `fix` and `apply` therefore refuse to edit those files: they show the validated patch and leave the file alone.
+> **The bundled examples are never edited.** The tests and the published results depend on the bugs planted in `examples/`. For those files `fix` validates and shows the patch, and `apply` writes the fixed version to `fixed_examples/<name>.py` instead of changing the example. To have a file patched in place, work on your own script or a copy.
 
 ```bash
 # Make a copy to work on
@@ -211,6 +217,9 @@ python -m silent_bug_agent fix my_train.py --dry-run
 
 # Write exactly the patch that was validated. The original is kept as my_train.py.orig
 python -m silent_bug_agent apply my_train.py
+
+# Not happy with that patch? Turn it down and ask for a different one (best with an LLM key)
+python -m silent_bug_agent fix my_train.py --dry-run --another
 
 # Or validate and write in one step
 python -m silent_bug_agent fix my_train.py

@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Box, Text, useApp, useInput } from 'ink';
 import Spinner from 'ink-spinner';
 import z from 'zod';
-import { runPython, type SbaEvent } from '../utils/pythonBridge.js';
+import { runPython, type SbaEvent, stopRunning } from '../utils/pythonBridge.js';
 
 export const options = z.object({
   live: z.boolean().default(false).describe('Send a live test request to each model'),
@@ -38,6 +38,8 @@ export default function Doctor({ options: opts = { live: false }, onBack, isEmbe
       exit();
     }
   });
+
+  useEffect(() => () => stopRunning(), []); // leaving the screen stops the command
 
   useEffect(() => {
     const pyArgs = ['doctor'];

@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Box, Text, useApp, useInput } from 'ink';
 import z from 'zod';
-import { resolveTarget, runPython, type SbaEvent } from '../utils/pythonBridge.js';
+import { resolveTarget, runPython, type SbaEvent, stopRunning } from '../utils/pythonBridge.js';
 import { MultiAgentStepper, type Step } from '../components/MultiAgentStepper.js';
 import { MetricMeter } from '../components/MetricMeter.js';
 
@@ -65,6 +65,8 @@ export default function Diagnose({
       prev.map((s) => (s.id === id ? { ...s, status, detail } : s))
     );
   }
+
+  useEffect(() => () => stopRunning(), []); // leaving the screen stops the command
 
   useEffect(() => {
     if (!script) {

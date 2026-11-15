@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { spawn, type ChildProcess } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
@@ -24,9 +24,9 @@ export type SbaEvent =
       applied: boolean;
       backup?: string | null;
       pending: boolean;
-      blocked?: string | null;
+      copy_to?: string | null;
     }
-  | { event: 'applied'; target: string; backup?: string | null; bug_id: string }
+  | { event: 'applied'; written: string; backup?: string | null; bug_id: string; copy: boolean }
   | { event: 'weight_report'; data: WeightReportData }
   | { event: 'error'; message: string; detail: string }
   | { event: 'done'; exit_code: number };
@@ -110,6 +110,23 @@ export function resolveTarget(target: string): string {
   return fs.existsSync(fromProject) ? fromProject : fromCwd;
 }
 
+const running = new Set<ChildProcess>();
+
+/**
+ * Stop every Python command this UI started and has not finished. A screen calls it when
+ * it is left (Esc, b or q), so a run the user walked away from does not carry on unseen.
+ */
+export function stopRunning(): void {
+  for (const proc of running) {
+    try {
+      proc.kill();
+    } catch {
+      // already gone
+    }
+  }
+  running.clear();
+}
+
 export async function* runPython(command: string[]): AsyncGenerator<SbaEvent> {
   const projectRoot = findProjectRoot();
   const python = resolvePython(projectRoot);
@@ -125,6 +142,10 @@ export async function* runPython(command: string[]): AsyncGenerator<SbaEvent> {
       PYTHONIOENCODING: 'utf-8',
     },
   });
+
+  running.add(proc);
+  let stopped = false;
+  proc.on('close', () => running.delete(proc));
 
   let stderr = '';
   proc.stderr?.on('data', (chunk) => {
@@ -157,9 +178,11 @@ export async function* runPython(command: string[]): AsyncGenerator<SbaEvent> {
   }
 
   const exitCode = await finished;
+  stopped = proc.killed;
 
   // A crash can end the stream with no `done`. Without this the screen would spin forever.
-  if (!sawDone) {
+  // A run the user stopped by leaving the screen is not a crash, and has nobody left to tell.
+  if (!sawDone && !stopped) {
     if (exitCode !== 0) {
       const tail = stderr.trim().split('\n').slice(-6).join('\n');
       yield {

@@ -16,7 +16,7 @@ const COMMANDS = [
   { key: '6', label: 'doctor', name: 'DOCTOR', description: 'Check the installation, keys and models' },
 ];
 
-// Bundled examples are protected: Fix shows the validated patch but never edits them.
+// Bundled examples are never edited: for them, "Apply the fix" writes a fixed copy to fixed_examples/.
 const SAMPLE_SCRIPTS = [
   { path: 'examples/sample_scripts/buggy_mnist.py', desc: 'Three planted bugs: softmax before the loss, no zero_grad, no input normalisation' },
   { path: 'examples/sample_scripts/benchmark_01_missing_zero_grad.py', desc: 'Benchmark 01: missing optimizer.zero_grad()' },

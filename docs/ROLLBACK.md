@@ -11,7 +11,7 @@ During validation, patches run on temp copies only. The script is written by `fi
 2. Restore: `cp train.py.orig train.py` (Windows: `copy train.py.orig train.py`)
 3. Verify: `python train.py` — confirm it runs as before.
 
-If a bundled example under `examples/` was changed (by an old version of the tool, or by hand), restore it from git: `git checkout -- examples/`. The current version refuses to edit those files.
+If a bundled example under `examples/` was changed (by an old version of the tool, or by hand), restore it from git: `git checkout -- examples/`. The current version never edits those files; it writes fixed copies to `fixed_examples/`.
 
 ### Scenario B: Corrupt Experience Memory Store
 If ChromaDB or SQLite trajectories become corrupt:

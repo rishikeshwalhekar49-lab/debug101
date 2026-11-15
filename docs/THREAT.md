@@ -42,6 +42,6 @@ Every statement here was checked against the code on 2026-11-15. A "known gap" i
 
 ## What the tool does and does not guarantee
 - It never writes the target script before a patch has passed both gates; with `--dry-run` it never writes it at all.
-- It never edits the bundled examples under `examples/`.
+- It never edits the bundled examples under `examples/`. Their fixed versions go to `fixed_examples/`.
 - `wsp` never modifies a script or a checkpoint.
 - Network calls go only to the configured LLM endpoints, **from the tool itself**. The user's script can make any network call it likes.

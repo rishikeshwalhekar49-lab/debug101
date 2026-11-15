@@ -3,7 +3,7 @@
 ## Automated Test Commands
 
 ```bash
-# Full test suite (426 tests, fake LLM provider, no real API calls). Takes about 8 minutes on a laptop CPU.
+# Full test suite (430 tests, fake LLM provider, no real API calls). Takes about 8 minutes on a laptop CPU.
 # Run ALL of it before pushing. A subset passing says nothing about the rest.
 SBA_NO_DOTENV=1 python -m pytest tests/ -v
 
@@ -51,7 +51,11 @@ The same suite runs in CI on Linux and Windows (`.github/workflows/tests.yml`) f
 3. `python -m silent_bug_agent apply my_train.py`
    - Expected: "Patch ... applied"; `my_train.py.orig` holds the original
 4. `python -m silent_bug_agent fix examples/sample_scripts/benchmark_04_softmax_before_crossentropy.py --no-llm`
-   - Expected: the patch is shown, then "The file was not changed. This is one of the project's bundled examples..."; `git status --short examples/` prints nothing
+   - Expected: the patch is shown, then "The file was not changed: it is a bundled example..."; `git status --short examples/` prints nothing
+5. `python -m silent_bug_agent apply examples/sample_scripts/benchmark_04_softmax_before_crossentropy.py`
+   - Expected: "Fixed version ... written to .../fixed_examples/benchmark_04_softmax_before_crossentropy.py"; the example itself is still unchanged
+6. `python -m silent_bug_agent fix my_train.py --dry-run --no-llm` on a fresh copy, then the same command with `--another`
+   - Expected: "No other fix passed validation, so nothing was changed. Without an LLM key each bug has a single rule-based fix..."; exit code 1
 
 ### Path C: Weight inspection (read-only)
 1. `python -m silent_bug_agent wsp examples/sample_scripts/benchmark_06_dead_relu.py`
@@ -75,10 +79,10 @@ The same suite runs in CI on Linux and Windows (`.github/workflows/tests.yml`) f
 ........................................................................ [ 16%]
 ........................................................................ [ 33%]
 ........................................................................ [ 50%]
-........................................................................ [ 67%]
-..................................................................s..... [ 84%]
-..................................................................       [100%]
-425 passed, 1 skipped in 455.92s (0:07:35)
+........................................................................ [ 66%]
+......................................................................s. [ 83%]
+......................................................................   [100%]
+429 passed, 1 skipped in 502.64s (0:08:22)
 ```
 - `git status --short examples/` after the run: no modified example.
 - TUI: `npm ci && npm run build` exits 0 (Node 24).
@@ -92,4 +96,4 @@ The same suite runs in CI on Linux and Windows (`.github/workflows/tests.yml`) f
 - Fake LLM server speaks Groq/Cerebras protocol; started per test session in `conftest.py`.
 - Multi-seed tests run real PyTorch training in isolated subprocesses — may take 2-5 min on CPU.
 - `validation/multiseedagent.py` is the real Gate 2 implementation and is what `tests/test_multiseed_agent.py` tests. `multiseed_agent.py` is only an alias for it. (An earlier version of this page had them the wrong way round.)
-- The files under `examples/` are test fixtures: tests rely on the bugs planted in them. `fix` and `apply` refuse to edit them.
+- The files under `examples/` are test fixtures: tests rely on the bugs planted in them. `fix` and `apply` never edit them; `apply` writes the fixed version to `fixed_examples/` instead.

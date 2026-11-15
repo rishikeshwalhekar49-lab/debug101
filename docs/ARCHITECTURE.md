@@ -69,5 +69,5 @@ The weight inspector is separate from the repair pipeline: it reports and never 
 1. **Hybrid Nodes** — every agent pairs deterministic tools with an LLM for perception/reasoning
 2. **Single State Contract** — `AgentState` dataclass flows through every node; no raw dicts between agents
 3. **Empirical Gate** — the script is written only after a patch passes Gate 1 and then either Gate 2's statistics or the "bug gone and not worse" rule
-4. **Approval Is Real** — with `--dry-run` nothing is written; `apply` writes only the validated patch; bundled examples are never edited
+4. **Approval Is Real** — with `--dry-run` nothing is written; `apply` writes only the validated patch; bundled examples are never edited (their fix goes to a copy)
 5. **Test Isolation** — `SBA_NO_DOTENV=1` + fake LLM server; no real API call in any test

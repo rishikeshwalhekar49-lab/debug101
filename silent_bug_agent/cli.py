@@ -3,13 +3,15 @@
     python -m silent_bug_agent scan <path> [--semantic] [--json] [--events]
     python -m silent_bug_agent monitor <script> [--max-steps N] [--json] [--events] [-- script args]
     python -m silent_bug_agent diagnose <script> [--no-llm] [--json] [--events] [-- script args]
-    python -m silent_bug_agent fix <script> [--max-iter N] [--dry-run] [--no-llm] [--json] [--events] [-- script args]
+    python -m silent_bug_agent fix <script> [--max-iter N] [--dry-run] [--another] [--no-llm] [--json] [--events]
+                                            [-- script args]
     python -m silent_bug_agent apply <script> [--events]
     python -m silent_bug_agent wsp [script] [--checkpoint FILE] [--max-steps N] [--json] [--events] [-- script args]
     python -m silent_bug_agent doctor [--live] [--events]
     python -m silent_bug_agent ui
 
 `fix --dry-run` validates a patch and keeps it; `apply` then writes exactly that patch.
+`fix --another` turns the kept patch down and looks for a different one.
 `wsp` only reads weights. It never changes a script or a checkpoint.
 
 Heavy libraries are imported inside each command, so `scan` works without PyTorch.
@@ -67,6 +69,8 @@ def build_parser() -> argparse.ArgumentParser:
     fix_parser.add_argument("--max-iter", type=int, default=3, help="Repair attempts per bug round")
     fix_parser.add_argument("--max-rounds", type=int, default=3, help="Bugs to fix in one command")
     fix_parser.add_argument("--dry-run", action="store_true", help="Show the patch without changing the file")
+    fix_parser.add_argument("--another", action="store_true",
+                            help="Turn down the patch validated last time and look for a different fix")
     fix_parser.add_argument("--no-llm", action="store_true", help="Use rules and statistics only")
     fix_parser.add_argument("--seeds", type=int, default=5, help="Seeds for the statistical gate (3 to 5)")
     fix_parser.add_argument("--json", action="store_true")
@@ -257,15 +261,21 @@ def _print_run(info: Dict[str, Any], dry_run: bool, script: str = "<script>") ->
         print("\nValidated patch:\n" + info["accepted_diff"])
         if info["patch_applied"]:
             print(f"Patch applied. Original saved as {info['backup']}")
-        elif info.get("apply_blocked"):
-            print(f"The file was not changed. {info['apply_blocked']}")
+        elif info.get("copy_to") and info.get("pending_patch"):
+            print("The file was not changed: it is a bundled example, and those are never edited.\n"
+                  f"To write the fixed version to {info['copy_to']}, run:\n"
+                  f"  python -m silent_bug_agent apply {script}")
         elif info.get("pending_patch"):
             print("Dry run: the file was not changed. To write exactly this patch, run:\n"
-                  f"  python -m silent_bug_agent apply {script}")
+                  f"  python -m silent_bug_agent apply {script}\n"
+                  "To turn it down and look for a different fix, run:\n"
+                  f"  python -m silent_bug_agent fix {script} --dry-run --another")
         elif dry_run:
             print("Dry run: the file was not changed.")
     if info["reason"]:
         print(f"Reason: {info['reason']}")
+    if info.get("another_note"):
+        print(info["another_note"])
     for note in info["llm_notes"] + info["memory_notes"]:
         print(f"note: {note}")
     llm = info.get("llm") or {}
@@ -274,7 +284,8 @@ def _print_run(info: Dict[str, Any], dry_run: bool, script: str = "<script>") ->
 
 
 def run_fix(script: str, script_args: List[str], *, max_iter: int = 3, max_rounds: int = 3, dry_run: bool = False,
-            no_llm: bool = False, seeds: int = 5, json_output: bool = False, events: bool = False) -> int:
+            no_llm: bool = False, seeds: int = 5, json_output: bool = False, events: bool = False,
+            another: bool = False) -> int:
     emitter = EventEmitter(enabled=events)
     target = _need_file(script)
     if target is None:
@@ -282,9 +293,26 @@ def run_fix(script: str, script_args: List[str], *, max_iter: int = 3, max_round
         emitter.done(2)
         return 2
     from .agents.supervisor import PipelineConfig, SupervisorAgent, describe_state
+    from .repair.pending import clear_rejected, reject_pending
+
+    # `--another`: the patch validated last time was turned down, so the repair must find a different one.
+    # Any other run starts fresh and forgets what was turned down before.
+    declined: List[Dict[str, str]] = []
+    if another:
+        declined = reject_pending(target)
+        if not declined:
+            message = (f"There is no earlier validated patch for {target.name} to replace. "
+                       "Run `fix --dry-run` first, then `fix --dry-run --another` to ask for a different fix.")
+            emitter.error(message)
+            emitter.done(2)
+            print(f"Error: {message}", file=sys.stderr)
+            return 2
+    else:
+        clear_rejected(target)
 
     config = PipelineConfig(max_iterations=max_iter, script_args=script_args, dry_run=dry_run, keep_pending=dry_run,
-                            offline=no_llm, seeds=(42, 1337, 2024, 7, 99)[:max(3, min(5, seeds))])
+                            offline=no_llm, seeds=(42, 1337, 2024, 7, 99)[:max(3, min(5, seeds))],
+                            rejected_patches=declined)
     try:
         supervisor = SupervisorAgent(config, emitter=emitter)
     except Exception as exc:
@@ -294,7 +322,8 @@ def run_fix(script: str, script_args: List[str], *, max_iter: int = 3, max_round
     if not json_output and not events:
         print(f"LLM: {supervisor.router.describe()}")
 
-    emitter.phase("pipeline", "start", max_rounds=max_rounds, max_iter=max_iter, dry_run=dry_run)
+    emitter.phase("pipeline", "start", max_rounds=max_rounds, max_iter=max_iter, dry_run=dry_run,
+                  another=another, declined=len(declined))
     try:
         states = supervisor.run_until_clean(str(target), max_rounds=1 if dry_run else max_rounds)
     except Exception as exc:
@@ -302,6 +331,18 @@ def run_fix(script: str, script_args: List[str], *, max_iter: int = 3, max_round
         emitter.done(2)
         raise
     runs = [describe_state(state) for state in states]
+    if another:
+        declined_bugs = {item.get("bug_id") for item in declined}
+        last = runs[-1]
+        fixed_bug = (last.get("accepted_patch") or {}).get("bug_id")
+        if not last.get("accepted_diff"):
+            last["another_note"] = "No other fix passed validation, so nothing was changed." + (
+                "" if supervisor.router.available() else
+                " Without an LLM key each bug has a single rule-based fix, so there is no alternative to offer."
+            ) + " Run fix again to be offered the first patch once more."
+        elif fixed_bug not in declined_bugs:
+            named = ", ".join(sorted(bug for bug in declined_bugs if bug)) or "the bug you turned a patch down for"
+            last["another_note"] = f"No other fix was found for {named}. This patch fixes a different bug, {fixed_bug}."
 
     # The supervisor already streamed each hypothesis, candidate and verdict as it happened.
     # Only the outcome is added here: the patch that passed, and whether the file was written.
@@ -312,7 +353,7 @@ def run_fix(script: str, script_args: List[str], *, max_iter: int = 3, max_round
                 bug_id=accepted["bug_id"], strategy=accepted["strategy"], source=accepted["source"],
                 diff=info["accepted_diff"], confidence=accepted["confidence"],
                 applied=info["patch_applied"], backup=info.get("backup"),
-                pending=info.get("pending_patch", False), blocked=info.get("apply_blocked"),
+                pending=info.get("pending_patch", False), copy_to=info.get("copy_to"),
             )
 
     emitter.result({"runs": runs})
@@ -407,11 +448,17 @@ def run_apply(script: str, *, events: bool = False) -> int:
         emitter.done(1)
         print(f"Not applied: {exc}", file=sys.stderr)
         return 1
-    emitter.applied(target=str(target), backup=record.get("backup"), bug_id=str(record.get("bug_id", "")))
+    emitter.applied(written=record["written"], backup=record.get("backup"), bug_id=str(record.get("bug_id", "")),
+                    copy=bool(record.get("copy")))
     emitter.done(0)
     if not events:
-        print(f"Patch for {record.get('bug_id') or 'the validated bug'} applied to {target}.")
-        print(f"Original saved as {record.get('backup')}")
+        bug = record.get("bug_id") or "the validated bug"
+        if record.get("copy"):
+            print(f"Fixed version (patch for {bug}) written to {record['written']}")
+            print(f"{target.name} is a bundled example and was left as it was.")
+        else:
+            print(f"Patch for {bug} applied to {target}.")
+            print(f"Original saved as {record.get('backup')}")
     return 0
 
 
@@ -511,7 +558,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     if args.command == "fix":
         return run_fix(args.script, script_args, max_iter=args.max_iter, max_rounds=args.max_rounds,
                        dry_run=args.dry_run, no_llm=args.no_llm, seeds=args.seeds,
-                       json_output=args.json, events=args.events)
+                       json_output=args.json, events=args.events, another=args.another)
     if args.command == "doctor":
         return run_doctor(live=args.live, events=args.events)
     if args.command == "apply":

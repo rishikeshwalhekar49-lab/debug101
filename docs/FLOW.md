@@ -29,15 +29,24 @@ The function and file names below are the real ones, checked against the code on
    - `_memory()`: records the attempt and the bandit reward in `ExperienceStore`. If a patch was accepted:
      - normal run: `apply_patch_to_file()` writes the script and keeps `<name>.py.orig`;
      - `--dry-run`: nothing is written; `repair/pending.py` → `save_pending()` keeps the patch for `apply`;
-     - a bundled example under `examples/`: nothing is written.
+     - a bundled example under `examples/`: the example is never written; the patch is kept so that `apply` can write the fixed version to `fixed_examples/`.
    - No patch accepted: status `failed`, with the last rejection reason. Exit code 1.
    - Every fifth recorded attempt, `agents/meta_evolution.py` → `MetaEvolutionAgent.run()` prunes unhelpful examples and updates lessons.
 
 ## Flow: `apply <script.py>`
 
 1. `cli.py` → `run_apply()` → `repair/pending.py` → `apply_pending()`.
-2. Refuses if there is no pending patch, if the file's SHA-256 differs from the one recorded when the patch was validated, or if the file is a bundled example.
-3. Otherwise `apply_patch_to_file()` writes the patch, keeps the `.orig` backup, and the pending record is deleted.
+2. Refuses if there is no pending patch, or if the file's SHA-256 differs from the one recorded when the patch was validated.
+3. An ordinary script: `apply_patch_to_file()` writes the patch and keeps the `.orig` backup. A bundled example: the example is left alone and the fixed version is written to `fixed_examples/<name>.py` in the folder the command runs from.
+4. The pending record, and the list of declined patches, are deleted.
+
+## Flow: `fix <script.py> --another`
+
+1. `cli.py` → `run_fix(another=True)` → `repair/pending.py` → `reject_pending()`: the pending patch is moved to a list of declined patches for this exact version of the file. With nothing to decline, the command stops with exit code 2.
+2. `SupervisorAgent._exclude_declined()`: each declined patch is applied to the source in memory, and the result is recorded in `tried_patches`, the same list the fix agent uses to avoid repeating itself. The patch also goes into the repair feedback with the reason "the user turned this down".
+3. The pipeline runs as usual. The LLM sees the declined patch and the reason; a patch that produces the same file as a declined one is refused, whether it comes from the LLM or from a rule.
+4. Outcomes: a different patch for the same bug; a patch for a different bug (the report says so); or no patch, with exit code 1.
+5. A `fix` run without `--another` clears the list, so the first patch can be offered again. The list is also dropped as soon as the file changes.
 
 ## Flow: `scan <path>`
 
