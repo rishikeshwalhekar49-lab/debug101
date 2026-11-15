@@ -14,18 +14,20 @@
 | `invariants/` | Invariant check library (gradient, activation, loss, weight, mode) | Storage |
 | `taxonomy/` | YAML bug taxonomy loader, 21 seed bug patterns | Inference |
 | `diagnosis/` | Causal engine, symptom dampening graph, DiagnosisAgent | Patch generation |
-| `repair/` | Patch application, AST recipes, FixSynthesizerAgent | Validation |
+| `repair/` | Patch application, patch guard, AST recipes, the repair loop, pending patches for `apply` | Validation |
 | `validation/` | Overfit oracle (Gate 1), multi-seed sandbox (Gate 2), ValidationAnalyzerAgent | Patch creation |
 | `learning/` | ChromaDB vector store, SQLite trajectory DB, contextual bandit | Agent orchestration |
 | `agents/meta_evolution.py` | Trajectory ablation, exemplar pruning, prompt tuning, bandit prior updates | Real-time decisions |
-| `wsp/` | Weight-Space Programming: SVD spectral inspection, kurtosis outlier excision, direct weight surgery, dual supervisor | Low-level AST parsing (delegates to static/) |
+| `wsp/` | Read-only weight inspection: non-finite and exploded values, zeroed matrices, collapsed biases and rank | Any write to a script, model or checkpoint |
+| `events.py` | NDJSON events (`--events`) that the terminal UI renders | Agent logic |
+| `tui/` (TypeScript) | Optional Ink terminal UI; runs the CLI commands as subprocesses | Any pipeline logic of its own |
 
 ## Trust Boundaries & Data Entry
 
 - **Untrusted Input Points:**
   - `cli.py` — target script path, checkpoint path, and CLI flags from the user
-  - `wsp/inspector.py` — untrusted checkpoint files (`.pt`, `.pth`, `.safetensors`, `.bin`) loaded from user disk
-  - `validation/script_runner.py` — executes user-supplied Python scripts in a subprocess
+  - `wsp/inspector.py` — checkpoint files from the user's disk, loaded only with `weights_only=True` or `safetensors`
+  - `validation/script_runner.py` and `agents/runtime_monitor_agent.py` — execute the user's script, and LLM-written patches to it, in a subprocess. This isolates crashes and hangs; it is not a security sandbox (see THREAT.md)
   - `semantic/client.py` — receives LLM-generated JSON (untrusted structured output)
   - `runtime/hooks.py` — tensor data from user model hooks (numeric validation required)
 
@@ -38,32 +40,34 @@
 
 ```mermaid
 flowchart TD
-    CLI["CLI (scan / monitor / diagnose / fix / doctor / wsp)"]
-    SUP["Supervisor / DualSupervisor\n(LangGraph & WSP Engine)"]
-    CODE_DET["Code-Space Perception\nAST Static + Runtime Hooks + LLM Semantic"]
-    WSP_DET["Weight-Space Perception\nSVD Spectral + Kurtosis Outliers + Bias Profiling"]
-    DIAG["Dual Causal Diagnosis\nCode & Parameter Fault Attribution"]
-    SYNTH["Solution Synthesis\nCode Diff + Weight Surgery Delta"]
-    HUMAN["Human-in-the-Loop Gate\nInteractive Proposal Approval"]
-    VAL["Validation Layer\nGate1: Overfit Oracle\nGate2: Multi-Seed Sandbox"]
-    MEM["Experience Store\nChromaDB + SQLite"]
+    CLI["CLI: scan / monitor / diagnose / fix / apply / wsp / doctor / ui"]
+    SUP["Supervisor (LangGraph StateGraph)"]
+    DET["Perception\nAST rules + runtime hooks + LLM review"]
+    DIAG["Diagnosis\ncausal engine + LLM review"]
+    SYNTH["Fix synthesis\nLLM patch or rule recipe, then patch guard"]
+    VAL["Validation\nGate 1: one-batch overfit\nGate 2: multi-seed statistics"]
+    MEM["Memory\nSQLite + ChromaDB"]
+    WRITE["Write the script\n(.orig backup kept)"]
+    PEND["Pending patch\nwaits for apply"]
+    WSP["Weight inspector\nread-only report"]
 
-    CLI --> SUP
-    SUP --> CODE_DET
-    SUP --> WSP_DET
-    CODE_DET --> DIAG
-    WSP_DET --> DIAG
-    DIAG --> SYNTH
-    SYNTH --> HUMAN
-    HUMAN -->|Approved| VAL
-    HUMAN -->|Rejected| SUP
-    VAL -->|Accepted| MEM
-    VAL -->|Failed (<= 3 iter)| SYNTH
+    CLI -->|fix| SUP
+    SUP --> DET --> DIAG --> SYNTH --> VAL
+    VAL -->|rejected, budget left| SYNTH
+    VAL -->|accepted or budget spent| MEM
+    MEM -->|fix| WRITE
+    MEM -->|fix --dry-run| PEND
+    CLI -->|apply, after the user approves| PEND
+    PEND --> WRITE
+    CLI -->|wsp| WSP
 ```
+
+The weight inspector is separate from the repair pipeline: it reports and never feeds a patch.
 
 ## Key Design Principles
 
 1. **Hybrid Nodes** — every agent pairs deterministic tools with an LLM for perception/reasoning
 2. **Single State Contract** — `AgentState` dataclass flows through every node; no raw dicts between agents
-3. **Empirical Gate** — no patch is committed without passing at least Gate 1 (overfit oracle)
-4. **Test Isolation** — `SBA_NO_DOTENV=1` + fake LLM server; zero real API calls in 404 tests
+3. **Empirical Gate** — the script is written only after a patch passes Gate 1 and then either Gate 2's statistics or the "bug gone and not worse" rule
+4. **Approval Is Real** — with `--dry-run` nothing is written; `apply` writes only the validated patch; bundled examples are never edited
+5. **Test Isolation** — `SBA_NO_DOTENV=1` + fake LLM server; no real API call in any test

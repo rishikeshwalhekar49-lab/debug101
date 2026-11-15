@@ -112,8 +112,8 @@ The full model list for each agent is in [docs/models_and_apis.md](docs/models_a
 Requires Python 3.10 or newer (3.12 recommended). Works on Windows, Linux and macOS.
 
 ```bash
-# 1. Get the code (this version is on the dl-multi-agent-system branch)
-git clone -b dl-multi-agent-system https://github.com/shreyasshah707/AgenticDLDebugger.git
+# 1. Get the code
+git clone https://github.com/shreyasshah707/AgenticDLDebugger.git
 cd AgenticDLDebugger
 
 # 2. Setup virtual environment
@@ -129,6 +129,8 @@ pip install -e ".[torch,semantic,dev]"
 # 4. Check the installation, keys and models
 python -m silent_bug_agent doctor
 ```
+
+[SETUP.md](SETUP.md) has the longer walkthrough, including the optional terminal UI (needs Node.js).
 
 ---
 
@@ -162,7 +164,12 @@ python -m silent_bug_agent doctor --live
 
 ## CLI Usage
 
-The unified CLI provides 4 core commands, plus `doctor`. Arguments for your own script go after `--`.
+The CLI has four core commands (`scan`, `monitor`, `diagnose`, `fix`), plus `apply`, `wsp`, `doctor` and `ui`. Arguments for your own script go after `--`.
+
+> **The bundled examples are protected.** The tests and the results below depend on the bugs planted in `examples/`, so `fix` and `apply` never edit those files: they show the validated patch and stop. To see a fix applied, work on a copy:
+> ```bash
+> cp examples/sample_scripts/buggy_mnist.py my_train.py      # Windows: copy examples\sample_scripts\buggy_mnist.py my_train.py
+> ```
 
 ### 1. Static & Semantic Code Scan (`scan`)
 ```bash
@@ -188,22 +195,47 @@ Runs detection and ranks root-cause hypotheses with confidence scores:
 python -m silent_bug_agent diagnose examples/sample_scripts/buggy_mnist.py
 ```
 
-### 4. Autonomous Repair Pipeline (`fix`)
-Runs the full supervisor loop: detection $\rightarrow$ diagnosis $\rightarrow$ patch synthesis $\rightarrow$ validation $\rightarrow$ patch application. The original file is kept as `<name>.py.orig`:
-```bash
-python -m silent_bug_agent fix examples/sample_scripts/buggy_mnist.py --max-iter 3
+### 4. Autonomous Repair Pipeline (`fix`, then `apply`)
+Runs the full supervisor loop: detection $\rightarrow$ diagnosis $\rightarrow$ patch synthesis $\rightarrow$ validation. There are two ways to use it:
 
-# Show the validated patch without changing the file
-python -m silent_bug_agent fix examples/sample_scripts/benchmark_01_missing_zero_grad.py --dry-run
+```bash
+# Review first (recommended): validate a patch, show it, change nothing
+python -m silent_bug_agent fix my_train.py --dry-run
+# ...then write exactly the patch that was validated and shown
+python -m silent_bug_agent apply my_train.py
+
+# Or in one step: validate and write, for up to --max-rounds (3) bugs
+python -m silent_bug_agent fix my_train.py --max-iter 3
 ```
 
-A `fix` run fixes one bug per round, re-detecting each time, for up to `--max-rounds` (3) rounds. On a CPU each round takes about 1 to 2 minutes for the sample scripts, mostly spent on the 10 training runs of Gate 2.
+Whenever a file is written, the original is kept beside it as `<name>.py.orig`. `apply` refuses if the script changed after the patch was validated.
 
-### 5. Installation check (`doctor`)
+A `fix` run fixes one bug per round, re-detecting each time; `--dry-run` stops after the first. On a CPU each round takes about 1 to 2 minutes for the sample scripts, mostly spent on the 10 training runs of Gate 2.
+
+### 5. Weight inspection (`wsp`, read-only)
+Looks at a model's numbers for signs of a training bug that the code does not show: NaN or exploded values, a weight matrix stuck at zero, biases so negative that a ReLU cannot fire, and collapsed rank. It only reads. It never changes a script or a checkpoint; a repair belongs in the code, where `fix` can test it.
+
+```bash
+# Train the script for 60 steps in the sandbox, then inspect the weights it produced
+python -m silent_bug_agent wsp examples/sample_scripts/benchmark_06_dead_relu.py
+
+# Or inspect a saved state_dict (loaded with weights_only=True, so a pickle cannot run code)
+python -m silent_bug_agent wsp --checkpoint model.pt --json
+```
+
+### 6. Installation check (`doctor`)
 ```bash
 python -m silent_bug_agent doctor          # libraries, .env, keys, model per task
 python -m silent_bug_agent doctor --live   # also sends one tiny request to each model
 ```
+
+### 7. Terminal UI (`ui`, optional)
+A keyboard-driven front end over the same commands, built with Ink. It needs Node.js 18 or newer:
+```bash
+cd tui && npm ci && npm run build && cd ..
+python -m silent_bug_agent ui
+```
+Its Fix screen always validates first and asks before writing; choosing "Apply" runs the `apply` command above.
 
 ---
 
@@ -236,16 +268,21 @@ Measured on 3 November 2026, offline (no LLM key), CPU only, 5 seeds per arm:
 ## Repository Structure
 
 ```
-DL/
+AgenticDLDebugger/
 ├── .env.example                      # Template for Groq/Cerebras keys
 ├── pyproject.toml                    # Package metadata & entrypoints
+├── SETUP.md                          # Step-by-step installation, including the terminal UI
+├── .github/workflows/tests.yml       # CI: the test suite on Linux and Windows, and the TUI build
 ├── docs/
 │   ├── models_and_apis.md            # Model per agent, providers, free limits
 │   ├── module1_runtime_hooks.md      # Module 1 hooks design
 │   ├── runtime_monitor_agent.md      # Module 1 agent design
-│   └── overhead_benchmark.md         # Module 1 overhead benchmark
+│   ├── overhead_benchmark.md         # Module 1 overhead benchmark
+│   └── ARCHITECTURE.md, THREAT.md…   # Design notes: architecture, flow, threats, failure modes, decisions
+├── tui/                              # Optional terminal UI (TypeScript, Ink + Pastel)
 ├── silent_bug_agent/                 # Core package
-│   ├── cli.py                        # Unified CLI (scan, monitor, diagnose, fix, doctor)
+│   ├── cli.py                        # Unified CLI (scan, monitor, diagnose, fix, apply, wsp, doctor, ui)
+│   ├── events.py                     # NDJSON events the terminal UI reads (--events)
 │   ├── config.py                     # .env loading, memory folder
 │   ├── findings.py                   # Standardized Finding and Report schemas
 │   ├── schemas.py                    # Multi-agent state machine contracts
@@ -257,7 +294,8 @@ DL/
 │   ├── semantic/                     # Module 2: LLM reviewer, Groq/Cerebras client, model router
 │   ├── validation/                   # Module 3: Overfit oracle, multiseed sandbox, script runner, analyzer
 │   ├── diagnosis/                    # Module 4: causal engine, taxonomy graph, bridge to the bug list
-│   ├── repair/                       # Module 5: Patch application & AST repair recipes
+│   ├── repair/                       # Module 5: Patch application, AST repair recipes, pending patches for `apply`
+│   ├── wsp/                          # Read-only weight inspector
 │   ├── learning/                     # Module 6: ChromaDB experience store & bandit
 │   └── agents/                       # Autonomous agent nodes:
 │       ├── supervisor.py             # Central orchestrator state machine (LangGraph)
@@ -280,7 +318,7 @@ DL/
 │   │   └── benchmark_08_unnormalized_inputs.py
 │   ├── benchmark_hooks.py            # Module 1 overhead benchmark
 │   └── evaluate_pipeline.py          # Repair rate and damage rate on the benchmarks
-└── tests/                            # 404 automated tests (pytest)
+└── tests/                            # 426 automated tests (pytest)
 ```
 
 ---
@@ -317,7 +355,9 @@ python -m pytest tests/test_supervisor_pipeline.py -v
 
 - Benchmarks are small synthetic scripts. Repair and damage rates on real projects have not been measured.
 - Gate 2 compares training loss (or the `final_loss` a script prints as `__METRICS__:{...}`). A bug that speeds up early training, like a missing `zero_grad()` on `buggy_mnist.py`, cannot be confirmed that way. Print a validation metric as `__METRICS__` to judge such fixes properly.
-- The Windows-specific paths (memory limits through Job Objects) are written but were tested on macOS only.
+- The Windows-specific paths (memory limits through Job Objects) are written but not covered by a test. CI runs the suite on Windows and Linux; nobody has run it on Python 3.14 yet (3.10 to 3.12 are tested).
+- `wsp` finds what is visible in the numbers after a short run: it will not see a bug that leaves the weights looking ordinary. Matrices larger than 1024 on a side are not checked for rank.
+- The terminal UI has no automated tests. Its build is checked in CI, and the event stream it reads is tested from Python.
 - The LLM path has been tested against a fake provider. Run `doctor --live` once real keys are in `.env`.
 - Dead units are measured only for `nn.ReLU` modules. A model that calls `F.relu` is not checked for dead units.
 - A script that needs its own command-line arguments must be given them after `--`.

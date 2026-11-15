@@ -1,47 +1,62 @@
 # System Failure & Resilience Map
 
+Checked against the code on 2026-11-15. Where a failure is **not** handled, this page says so.
+
 ## Dependency Breakdown
 
-### Dependency: Groq / Cerebras LLM API
-- **Slow (Latency > 10 s)**: `semantic/client.py` raises `TimeoutError`; Supervisor logs and routes to rule-based fallback if available.
-- **Down (5xx / connection refused)**: `semantic/router.py` attempts provider failover (Groq → Cerebras or vice versa); if both down, LLM-dependent agents emit empty results and pipeline continues with deterministic tools only.
-- **Returning Corrupted JSON**: `agents/prompts.py` schema validation raises `ValidationError`; agent logs the raw response and returns an empty hypothesis/patch list; Supervisor retries up to `max_iterations`.
-- **Rate Limited (429)**: Client applies exponential backoff (3 retries, 2× backoff); if exhausted, treated as Down.
+### Groq / Cerebras LLM API (`semantic/client.py`, `semantic/router.py`)
+- **Slow**: each request has a 90-second timeout. A timeout is retried up to 2 times (waiting 2 s, then 4 s) and then raises `LLMError`.
+- **Rate limited (429)**: retried only if the server's `retry-after` is 20 seconds or less, at most 2 times. Otherwise the request fails over at once.
+- **Server error (5xx) or connection error**: retried up to 2 times, then `LLMError`.
+- **Failover**: for each task the router tries its models in order (Groq first, then Cerebras). If all fail it raises `LLMUnavailable`, and the agent that asked falls back to its rule-based path. The run report lists the failed calls.
+- **Malformed JSON**: the client first asks for a strict JSON schema, then retries in plain JSON mode, and extracts the first JSON object from the reply. If that still fails it is an `LLMError`, handled as above.
+- **No key at all**: every agent runs its deterministic path. The report says "offline".
 
-### Dependency: ChromaDB (Vector Experience Store)
-- **Slow (Query > 1 s)**: Few-shot retrieval times out; FixSynthesizerAgent proceeds with zero examples (zero-shot).
-- **Down / Corrupted**: `learning/experience_store.py` catches `Exception`, logs, and returns empty list; pipeline continues without memory.
-- **Empty (Cold Start)**: Normal condition; bandit uses uniform priors; LLM uses zero-shot prompting.
+### ChromaDB (semantic recall)
+- **Missing, broken, or its embedding model cannot be downloaded**: recall falls back to word overlap over the SQLite rows, and a note is added to the report. It does not return an empty list.
+- **Cold start**: no examples; the fix agent works zero-shot and the bandit has no history.
+- There is no query timeout.
 
-### Dependency: SQLite (Trajectory Store)
-- **Slow**: Queries are fast (<10 ms expected); no timeout risk at current scale.
-- **Corrupted / Locked**: `experience_store.py` catches `sqlite3.DatabaseError`; store fails open (logs error, skips write); trajectory is lost but pipeline does not crash.
-- **Disk Full**: `sqlite3.OperationalError` caught; experience write skipped; warning logged.
+### SQLite (repair history, bandit, lessons)
+- **The file cannot be opened or its schema cannot be created** (no permission, read-only folder): the store switches to an in-memory database for this run and adds a note. Nothing learned in that run is saved. Tested in `tests/test_memory_and_meta.py`.
+- **Locked**: SQLite waits up to 10 seconds.
+- **Corrupted, or disk full during a later write**: **not handled.** The `sqlite3` error propagates and the command fails. Delete `~/.silent_bug_agent/experience.sqlite3` to start again.
 
-### Dependency: PyTorch (Runtime Hooks)
-- **Model has no `nn.Module` layers**: Hook attachment finds no targets; `RuntimeSession` returns empty telemetry; static analysis continues alone.
-- **CUDA OOM during validation**: Subprocess exits with non-zero code; `script_runner.py` captures stderr; validation verdict: rejected with note "OOM".
-- **Model uses `F.relu` instead of `nn.ReLU`**: Dead unit detection silently misses it (known gap; see CONSTRAINTS.md).
+### PyTorch (runtime hooks)
+- **A hook raises**: the exception is caught, monitoring switches itself off for the rest of the run, and the script continues.
+- **No model or no optimizer step**: no runtime findings; static analysis still reports.
+- **`F.relu` instead of `nn.ReLU`**: dead units are not measured (known gap).
+- **The script itself crashes**: `fix` stops with outcome `script_error` and the traceback tail. Nothing is patched.
 
-### Dependency: Subprocess (Multi-Seed Validation)
-- **Seed subprocess crashes**: Exit code ≠ 0; that seed's metric is excluded from statistics; if fewer than 3 seeds complete, verdict is rejected with note "insufficient seeds".
-- **Metric protocol absent** (script does not print `__METRICS__:{...}`): Validation falls back to loss curve comparison; warns user to add `__METRICS__` output.
+### Validation subprocesses (`validation/sandbox.py`, `multiseedagent.py`)
+- **A patched run crashes, times out, or yields no finite loss on any seed**: the patch is rejected. One failed seed is enough; seeds are not dropped from the statistics.
+- **The unpatched script itself fails or gives no finite loss on some seed** (for example it diverges to NaN): there is nothing to test against. If the patched script trains on every seed, the patch is accepted on that ground, the route is recorded as `baseline_failed`, and no p-value or effect size is reported.
+- **No `__METRICS__` line**: the loss is taken from the values passed to `backward()`, which `script_runner.py` records itself. The script does not need to cooperate.
+- **Out of memory**: the child process dies and that run counts as a failure.
 
-## System Limits & Bottlenecks
+### Weight inspection (`wsp`)
+- **The script makes no optimizer step, crashes, or times out**: no weights are captured; the report says why and the exit code is 2.
+- **A checkpoint that needs unpickling**: refused, with the reason.
 
-| Limit | Value | Behavior at Limit |
+### Terminal UI
+- **The Python process dies without a final event**: the UI shows the last lines of its error output instead of waiting forever.
+- **Python cannot be started**: reported as an error on screen.
+
+## System Limits
+
+| Limit | Value | Behaviour at the limit |
 |---|---|---|
-| Repair loop retries | 3 (default `max_iterations`) | `AgentState.status = ABORTED` |
-| Multi-seed count | 5 seeds default | Configurable; fewer seeds = less statistical power |
-| Max patch size | No hard limit | Large diffs slow LLM generation and diff parsing |
-| ChromaDB collection size | ~100K vectors (practical) | Retrieval degrades; run `meta_evolution` pruning |
-| SQLite trajectory count | ~1M rows (practical) | No issue at current project scale |
-| LLM context window | Model-dependent (~128K tokens) | Long source files may need chunking (not yet implemented) |
+| Repair attempts per round | 3 (`--max-iter`) | status `failed`, with the last rejection reason; exit code 1 |
+| Bugs fixed per `fix` command | 3 (`--max-rounds`) | stops; run again for more |
+| Attempts per bug | 2 | the next hypothesis is tried |
+| Patch size | 40 changed lines | larger patches are rejected before validation |
+| Seeds for Gate 2 | 3 to 5 (`--seeds`) | fewer seeds means less statistical power |
+| Per-run timeout | 180 s | the run counts as failed |
+| Rank check in `wsp` | matrices up to 1024 on a side | larger ones are skipped, with a note |
+| Weights captured by `wsp` | 50 million values | larger models are not written; use `--checkpoint` |
 
 ## Monitoring & Alerts
-
-- **Structured logging**: All agents log to stdout with `[AGENT_NAME]` prefix; pipe to file for persistence.
-- **Sentry integration**: Not yet integrated — open gap.
-- **Prometheus metrics**: Not yet integrated — open gap.
-- **Current alerting**: `runtime/alerts.py` prints real-time invariant violation alerts to stdout during `sba monitor`.
-- **Pipeline abort signal**: `AgentState.status == ABORTED` with `abort_reason` string; CLI exits with code 1.
+- There is no structured logging, Sentry or Prometheus integration.
+- The CLI prints a report at the end of each command. `--json` gives the same data as JSON, and `--events` streams NDJSON events as the pipeline runs.
+- `monitor` prints early alerts to stderr while the script is still running.
+- A failed `fix` exits with code 1 and prints the reason.

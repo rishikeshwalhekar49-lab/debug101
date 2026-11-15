@@ -1,40 +1,47 @@
 # Threat Model & Security Controls
 
+Every statement here was checked against the code on 2026-11-15. A "known gap" is a real, unmitigated risk.
+
 ## Threat Actors
-- **Anonymous User / Researcher**: Has shell access to the machine; runs `sba fix` on their own training scripts
-- **Malicious Local Script**: A user-supplied Python training script that attempts to escape sandbox via subprocess calls, file writes, or environment manipulation
-- **Compromised LLM Response**: The LLM provider returns a maliciously crafted JSON response designed to inject code or path traversal into the patch
-- **Compromised Memory Store**: An attacker with file access to `~/.silent_bug_agent/` injects poisoned trajectories for future few-shot retrieval
+- **The user's own training script**: it is executed, with the user's full permissions, by `monitor`, `diagnose`, `fix` and `wsp`.
+- **A malicious or mistaken LLM response**: the model's reply becomes a patch, and that patch is executed during validation.
+- **An untrusted checkpoint file** given to `wsp --checkpoint`.
+- **A tampered memory store**: someone with file access to `~/.silent_bug_agent/` edits stored repairs that later become few-shot examples.
 
 ## Attack Surface & Mitigations
 
-### Entry Point: CLI Target Script Path (`--target / positional arg`)
-- **Potential Abuse**: Path traversal to access `/etc/passwd` or system files; symlink attack to redirect analysis to sensitive files
-- **Active Controls**: Path is resolved to absolute; must exist and be a `.py` file (file extension check in `cli.py`)
-- **Known Gap**: No check for symlinks pointing outside the user's project directory
+### CLI target path
+- **Controls**: the path is resolved to an absolute path and must be an existing file.
+- **Known gap**: the extension is not checked, and symlinks are followed. This is not a privilege boundary: the tool only does what the user running it could already do.
 
-### Entry Point: User-Supplied Training Script Execution (Validation Subprocess)
-- **Potential Abuse**: Script calls `os.system()`, writes to arbitrary paths, or spawns background processes during validation
-- **Active Controls**: Executed in an isolated subprocess with a fresh Python environment; `SBA_HOME` isolates memory writes; stdout parsed for `__METRICS__` protocol only
-- **Known Gap**: No `seccomp` or OS-level sandbox (e.g., `bubblewrap`); malicious scripts have full user-level filesystem access
-- **Known Gap**: Windows Job Object memory limits implemented but only tested on macOS
+### Running the user's script (runtime monitor, validation gates, weight inspection)
+- **Controls**: the script runs in a **separate process** with a time limit (`runtime_monitor_agent.py` with `isolate=True`, `validation/sandbox.py`). A crash or hang cannot take down the pipeline. Patched code is written to a temp folder and run from there; the user's file is not touched during validation.
+- **Known gap**: this is isolation from crashes, **not a security sandbox**. The child process has the user's full file and network access. There is no `seccomp`, container or AppContainer. Do not run the tool on a script you do not trust.
+- **Known gap**: memory limits (`RLIMIT_AS` on POSIX, Job Objects on Windows) exist in `sandbox.py` but are off unless `max_memory_mb` is set, and no test covers them.
 
-### Entry Point: LLM API Response (Groq/Cerebras JSON)
-- **Potential Abuse**: Prompt injection in the LLM response causes the patch to include `import subprocess; subprocess.call(...)` or overwrite unrelated files
-- **Active Controls**: Strict JSON schema validation in `agents/prompts.py`; patch is applied to a temp file copy, not the original; diff is printed and requires explicit `--apply` flag (or is applied to temp only)
-- **Known Gap**: No static analysis of the generated patch diff for malicious patterns before application
+### LLM response turned into a patch
+- **Controls**:
+  - replies must match a strict JSON schema (`agents/prompts.py`, `semantic/client.py`);
+  - every patch passes `repair/patch_utils.patch_guard` before it is run: it must parse, must not add process, network or file-deletion calls (`subprocess`, `socket`, `os.system`, `eval`, `exec`, ...), must not remove a `backward()` or `step()` call, and must not delete most of the script;
+  - a patch may change at most 40 lines;
+  - the original file is only written after both validation gates pass, and a `.orig` backup is kept.
+- **Approval**: `fix --dry-run` writes nothing and stores the validated patch; `apply` writes exactly that patch, and refuses if the file changed since. Plain `fix` (no `--dry-run`) writes a validated patch without asking. There is no `--apply` flag.
+- **Known gap**: `patch_guard` is a deny-list of text patterns. It lowers the risk; it cannot prove a patch is harmless. A patch is still executed in the validation subprocess with the user's permissions.
 
-### Entry Point: ChromaDB / SQLite Experience Store
-- **Potential Abuse**: An attacker with local file access poisons trajectories to bias future few-shot prompting toward harmful patches
-- **Active Controls**: Store lives in `~/.silent_bug_agent/`; access requires local user permissions; `meta_evolution.py` runs trajectory ablation to prune low-quality exemplars
-- **Known Gap**: No cryptographic signing of stored trajectories; no integrity check on load
+### Checkpoint files (`wsp --checkpoint`)
+- **Controls**: checkpoints are loaded with `torch.load(..., weights_only=True)` or `safetensors`, so a pickle cannot run code. A file that needs full unpickling is refused with an explanation. `tests/test_wsp.py` checks this with a pickle that would create a file if executed.
+- **Known gap**: a very large checkpoint is loaded fully into memory.
 
-### Entry Point: PyTorch Hook Telemetry (Runtime Monitor)
-- **Potential Abuse**: A model that deliberately produces NaN gradients to fool the invariant checker into suppressing real bug signals
-- **Active Controls**: `runtime/numerics.py` validates tensor dtype and finiteness; anomaly detection flags NaN/Inf regardless of source
-- **Known Gap**: Hook-based telemetry can be bypassed by scripts that detach tensors before backward
+### Experience store (SQLite + ChromaDB under `~/.silent_bug_agent/`)
+- **Controls**: ordinary file permissions. `agents/meta_evolution.py` drops stored examples whose use correlates with worse outcomes.
+- **Known gap**: no signing or integrity check. Anyone who can write the folder can plant examples that are shown to the LLM.
 
-## Security Properties We Guarantee
-- Real LLM API keys are NEVER loaded in test environments (`SBA_NO_DOTENV=1`)
-- Patches are diffed and applied to temp copies first; original files modified only on explicit acceptance
-- No network calls outside of the LLM provider endpoints configured in `.env`
+### Secrets
+- **Controls**: keys are read from `.env`, which is in `.gitignore`. Tests set `SBA_NO_DOTENV=1` and remove key variables (`tests/conftest.py`), so they never load or send a real key.
+- **Known gap**: nothing stops a user from committing or zipping `.env` by hand. A key that has been shared in any archive must be revoked.
+
+## What the tool does and does not guarantee
+- It never writes the target script before a patch has passed both gates; with `--dry-run` it never writes it at all.
+- It never edits the bundled examples under `examples/`.
+- `wsp` never modifies a script or a checkpoint.
+- Network calls go only to the configured LLM endpoints, **from the tool itself**. The user's script can make any network call it likes.

@@ -1,56 +1,54 @@
-# FEATURE-002: Weight-Space Programming (WSP)
+# FEATURE-002: Weight inspection (`wsp`)
 
-## Goal & Research Context
-Implements the paradigm introduced by Takahashi, Teoh, Zhang, and Khattab (MIT CSAIL, Nov 2026): *"Sparks of Weight-Space Programming: LLMs can natively read & write neural network weights"*. 
+## Status: reduced to a read-only inspector on 2026-11-15
 
-Instead of debugging models exclusively through Python source code (AST) and gradient descent, WSP enables direct, gradient-free inspection, diagnosis, and surgical editing of raw neural network parameters ($W$) alongside code space.
+The first version (2026-11-07) was described as "Weight-Space Programming": inspect weights, propose "weight surgery", and validate it. A review found that it did not do what this page claimed, so it was cut back to the part that works and can be defended. The reasons are listed below so the decision can be checked.
 
----
+## What it does now
 
-## Architectural Pillars
+`python -m silent_bug_agent wsp [script.py] [--checkpoint FILE]` reads a model's weights and reports anomalies. It never changes a script, a model or a checkpoint.
 
-### 1. Simultaneous Dual Perception
-Runs code-space analysis and weight-space tensor perception simultaneously:
-- **Code Space**: AST static rules (`static/`) + live runtime hook telemetry (`runtime/`).
-- **Weight Space**:
-  - **SVD / Spectral Decomposition**: Computes singular value distributions $\sigma_i$, condition numbers $\kappa = \sigma_{max} / \sigma_{min}$, and Shannon-entropy effective rank:
-    $$p_i = \frac{\sigma_i}{\sum \sigma_j}, \quad H = -\sum p_i \ln(p_i), \quad r_{eff} = \exp(H)$$
-  - **Kurtosis & Outlier Profiling**: Heavy-tailed outliers ($kurtosis > 30$) responsible for attention/reasoning loops.
-  - **Neuron & Bias Collapse**: Catastrophic negative biases (e.g. $bias \le -15.0$) causing dead ReLUs.
+| Check | Severity | Meaning |
+|---|---|---|
+| NaN or infinite values | critical | training diverged |
+| Values above 10,000 | warning | an exploding update, usually just before NaN |
+| A weight matrix that is all zero | warning | the layer passes no signal |
+| Biases at or below −15 | critical if half or more of the layer, warning from 5%, otherwise a note | a ReLU after this layer cannot fire |
+| Effective rank below 15% of the possible rank | warning (critical below 5%) | most units compute the same thing |
+| A few values far outside the rest (kurtosis above 30) | warning if one value is 100 or more robust deviations out, otherwise a note | one huge update or a hand-written initialisation |
 
-### 2. Surgical Weight-Space Operations (`wsp/editor.py`)
-- **Subspace Excision**:
-  $$W' = W(I - v v^T) = W - (W v) v^T$$
-  Removes an identified toxic/loop projection vector $v$ without perturbing orthogonal features.
-- **Low-Rank Delta Injection**:
-  $$W' = W + \alpha (u v^T)$$
-  Injects low-rank capacity to revive collapsed rank.
-- **Bias Re-centering**: Surgically centers depressed bias vectors.
-- **Outlier Clamping**: Clamps extreme weights above $k \times \sigma$.
+Effective rank is the exponential of the entropy of the normalised singular values: $p_i = \sigma_i / \sum_j \sigma_j$, $r_{eff} = \exp(-\sum_i p_i \ln p_i)$.
 
-### 3. Human-in-the-Loop Approval & Empirical Validation Gate
-1. Consolidates code findings and weight findings into a single `DualSolution`.
-2. Interactively prompts the user with both code diffs and weight surgery cards ($\Delta W$ norm, parameters affected %).
-3. Upon user approval, runs **Gate 1 (Overfit Oracle)** and **Gate 2 (Multi-Seed Statistical Sandbox)**.
-4. If validation fails, collects empirical feedback and adapts across up to 3 iterations max.
+Weights come from a checkpoint (loaded with `weights_only=True`, so a pickle cannot run code), or from the script itself after `--max-steps` (default 60) optimizer steps in the validation sandbox.
 
----
+## Why the first version was cut back
 
-## In-Scope
-- Inspection of all PyTorch `nn.Module` models, `.pt`, `.pth`, `.bin`, `.safetensors`.
-- SVD spectral analysis, condition number bounding, effective rank collapse detection.
-- Subspace projection excision, low-rank delta injection, bias centering, outlier clamping.
-- CLI subcommand: `sba wsp <script.py> [--checkpoint] [--dry-run] [--yes] [--events]`.
-- Pastel + Ink TUI interactive screen: `tui/commands/wsp.tsx`.
+1. **The "surgery" was never applied or tested.** Weight patches were built and displayed, but the validation gates retrain the script from scratch, so an edit to a weight tensor could not affect the result. The gates were only testing the code diff.
+2. **Models were loaded by executing the whole user script inside the tool's own process**, with no time limit and no isolation. A script that trains at import time would train there.
+3. **It inspected freshly initialised weights**, which say nothing about a training bug. For the documented example (`benchmark_06_dead_relu.py`) it could not build the model at all and inspected nothing.
+4. **False alarms.** Every model with BatchNorm, LayerNorm or zero-initialised biases was flagged ("zeroed out"), and healthy square layers were flagged as "ill-conditioned" purely by chance: 2% of fresh 64-wide `nn.Linear` layers, 4% at 256 and 7% at 512 have a condition number above the old threshold (measured over 100 to 200 layers each).
+5. **Its "Gate 2" had no statistics.** It compared two means with no test, and accepted outright when the script printed no loss.
+6. **Confidence was hard-coded to 0.92.**
+7. **Outlier clamping is harmful as a default.** Large-magnitude weights in trained networks are often the ones that matter most.
+8. `torch.load(..., weights_only=False)` on a user-supplied file can execute code.
+9. One editing routine used `math` without importing it and would crash on any rank-collapse finding.
 
-## Out-of-Scope
+## The research reference
+
+The first version cited "Takahashi, Teoh, Zhang, and Khattab (MIT CSAIL)" for "Sparks of Weight-Space Programming". Corrections:
+
+- The first author is Rikiya **Takehi**, and the piece is a [blog post](https://rikiyat.github.io/blog/weight-space-programming/), not a peer-reviewed paper.
+- Its claims have been [disputed](https://arxiv.org/html/2611.08070v1).
+- It describes an LLM reading and writing weights. This package uses no LLM at all: it computes fixed statistics. It should not be presented as an implementation of that idea.
+
+## Out of scope
+- Editing weights. A repair belongs in the training code, where `fix` can test it against both gates.
 - JAX / TensorFlow checkpoints.
-- Distributed FSDP parameter sharding across multi-node clusters.
+- Rank checks on matrices larger than 1024 on a side (skipped, with a note).
 
----
+## Tests
+`tests/test_wsp.py` (13 tests): each anomaly type, a healthy model with normalisation layers that must stay clean, checkpoint formats, a malicious pickle that must not execute, weights captured from a script without changing it, and the CLI exit codes.
 
-## Timeline Log
-- 2026-11-07 19:40 - Designed WSP architecture (`schemas.py`, `inspector.py`, `editor.py`, `dual_supervisor.py`).
-- 2026-11-07 19:50 - Implemented unit tests `tests/test_wsp.py` (6/6 passed, 48/48 full regression passed).
-- 2026-11-07 19:58 - Integrated into Pastel + Ink TUI (`tui/commands/wsp.tsx` and `index.tsx`), built and verified exit 0.
-
+## Timeline
+- 2026-11-07 — first version (`schemas.py`, `inspector.py`, `editor.py`, `dual_supervisor.py`).
+- 2026-11-15 — `editor.py` and `dual_supervisor.py` removed; inspector rewritten; weights now captured from a sandboxed run.

@@ -1,98 +1,68 @@
 # Execution Flow
 
-## Flow: Full Pipeline — `sba fix <script.py>`
+The function and file names below are the real ones, checked against the code on 2026-11-15.
 
-### Call Sequence
+## Flow: Full Pipeline — `fix <script.py>`
 
-1. `cli.py` → `main()`: Parses CLI args, calls `load_env()`, creates `run_id`, builds initial `AgentState(target_file=..., run_id=...)`.
-2. `agents/supervisor.py` → `build_graph()`: Compiles LangGraph StateGraph with nodes: detect → diagnose → fix → validate → store → (loop or done).
-3. **Detection Node**
-   - `static/analyzer.py` → `StaticAnalyzer.analyze()`: Runs 10 AST visitor rules over the target file; emits `Finding` list.
-   - `runtime/instrument.py` → `Instrumenter.attach()`: Registers PyTorch hooks (forward, backward) on model layers.
-   - `runtime/session.py` → `RuntimeSession.run()`: Executes one monitored forward/backward pass; collects telemetry.
-   - `agents/runtime_monitor_agent.py` → `RuntimeMonitorAgent.run()`: LLM consolidates telemetry + static findings into unified `DetectionReport`.
-   - `semantic/analyzer.py` → `SemanticAnalyzer.review()`: LLM reviews source for intent vs. implementation mismatches.
-4. **Diagnosis Node**
-   - `diagnosis/bridge.py` → `build_taxonomy_graph()`: Loads `taxonomy/bug_taxonomy.yaml` into a weighted causal graph.
-   - `diagnosis/inference/causal_engine.py` → `CausalEngine.rank()`: Applies symptom dampening matrix to findings; scores hypotheses.
-   - `agents/diagnosis_agent.py` → `DiagnosisAgent.run()`: LLM performs chain-of-thought reasoning over ranked hypotheses; emits `List[DiagnosticHypothesis]`.
-5. **Fix Node**
-   - `learning/bandit.py` → `ContextualBandit.select()`: Picks `RepairStrategy` for the top hypothesis.
-   - `learning/experience_store.py` → `ExperienceStore.retrieve()`: Fetches similar past trajectories from ChromaDB for few-shot context.
-   - `repair/recipes.py` → `apply_recipe()`: Attempts rule-based patch first.
-   - `agents/fix_synthesizer_agent.py` → `FixSynthesizerAgent.run()`: ReAct LLM generates unified diff `PatchCandidate`.
-6. **Validation Node**
-   - `repair/patch_utils.py` → `apply_patch()`: Applies diff to a temp copy of the target file.
-   - `validation/overfit_agent.py` → `OverfitOracle.run()`: Gate 1 — single-batch overfit check; numeric sanity and gradient flow.
-   - `validation/multiseed_agent.py` → `MultiSeedAgent.run()`: Gate 2 — 5 isolated subprocesses, paired t-test + KS-test + Cohen's d.
-   - `validation/analyzer.py` → `ValidationAnalyzerAgent.run()`: LLM interprets statistics; emits final `ValidationVerdict`.
-7. **Store / Loop Node**
-   - If `verdict.accepted`: `learning/experience_store.py` → `ExperienceStore.store()`: Writes trajectory to SQLite + ChromaDB; bandit reward updated.
-   - If `verdict.rejected` and `iteration < max_iterations`: loop back to Fix Node with rejection reason injected into prompt.
-   - If `verdict.rejected` and budget exhausted: `AgentState.status = ABORTED`.
+1. `cli.py` → `main()` → `run_fix()`: builds a `PipelineConfig` and a `SupervisorAgent`, then calls `run_until_clean()`, which runs the graph once per bug (up to `--max-rounds`, or once with `--dry-run`).
+2. `agents/supervisor.py` → `SupervisorAgent._build_graph()`: a LangGraph `StateGraph` with the nodes `perception → diagnosis → repair → validation → memory`, and a `feedback → repair` loop after a rejection. One `AgentState` object flows through every node.
+3. **Perception** (`_perception`)
+   - `static/analyzer.py` → `StaticAnalyzer.analyze_file()`: 10 AST rules, no execution.
+   - `semantic/analyzer.py` → `SemanticAnalyzer.analyze_file()`: LLM review of the source, only when a key is set.
+   - `agents/runtime_monitor_agent.py` → `RuntimeMonitorAgent`: runs the script in a subprocess for a step budget with `runtime/instrument.py` (`AutoInstrumenter`) and `runtime/hooks.py` (`RuntimeHooks`) attached, and turns invariant violations into findings.
+   - `_consolidate()`: an optional LLM summary that marks findings that are side effects of others.
+   - If the script itself raises, the run stops here with outcome `script_error`.
+4. **Diagnosis** (`_diagnosis`)
+   - `agents/diagnosis_agent.py` → `DiagnosisAgent`: `diagnosis/bridge.py` (`engine_inputs`, `hypotheses_from_report`) feeds the findings to `diagnosis/inference/causal_engine.py` (`CausalEngine`), which ranks causes above their symptoms. With a key, an LLM reviews the ranking.
+5. **Repair** (`_repair`)
+   - `repair/loop.py` → `AutonomousRepairLoop.run()` → `agents/fix_synthesizer_agent.py` → `FixSynthesizerAgent`.
+   - `learning/bandit.py` → `ContextualBandit.select_strategy()` picks a repair strategy; `learning/experience_store.py` → `ExperienceStore.recall()` supplies similar accepted repairs as examples.
+   - With a key the LLM writes the patch; without one, or if its patch is unusable, `repair/recipes.py` → `recipe_for()` writes it from a rule.
+   - `repair/patch_utils.py` → `patch_guard()` rejects unsafe or oversized patches before anything is run.
+6. **Validation** (`_validation`)
+   - Gate 1: `validation/overfit_agent.py` → `OverfitOracleAgent`: the patched script must be able to overfit one batch.
+   - Gate 2: `validation/multiseedagent.py` → `MultiseedAgent.verify_patch()`: baseline and patched runs on 3 to 5 seeds in subprocesses (`validation/sandbox.py`, `validation/script_runner.py`), compared with a paired t-test, KS test, Cohen's d and a confidence interval. Skipped if Gate 1 rejected. (`multiseed_agent.py` is only an alias that re-exports this module.)
+   - `_bug_gone()`: the detectors are run again on the patched code.
+   - `validation/analyzer.py` → `ValidationAnalyzerAgent.analyze()`: accepts on statistics, or when the bug is gone and results are not worse (warning-level evidence or above). An LLM may veto an acceptance; it can never overturn a rejection.
+7. **Feedback or memory**
+   - Rejected, budget left: `_feedback()` adds the rejection reason to the next repair prompt.
+   - `_memory()`: records the attempt and the bandit reward in `ExperienceStore`. If a patch was accepted:
+     - normal run: `apply_patch_to_file()` writes the script and keeps `<name>.py.orig`;
+     - `--dry-run`: nothing is written; `repair/pending.py` → `save_pending()` keeps the patch for `apply`;
+     - a bundled example under `examples/`: nothing is written.
+   - No patch accepted: status `failed`, with the last rejection reason. Exit code 1.
+   - Every fifth recorded attempt, `agents/meta_evolution.py` → `MetaEvolutionAgent.run()` prunes unhelpful examples and updates lessons.
 
-### Modifying In This Change:
-- Track which file/function/lines you change here during active edits.
+## Flow: `apply <script.py>`
 
----
+1. `cli.py` → `run_apply()` → `repair/pending.py` → `apply_pending()`.
+2. Refuses if there is no pending patch, if the file's SHA-256 differs from the one recorded when the patch was validated, or if the file is a bundled example.
+3. Otherwise `apply_patch_to_file()` writes the patch, keeps the `.orig` backup, and the pending record is deleted.
 
-## Flow: Static Scan — `sba scan <script.py>`
+## Flow: `scan <path>`
 
-### Call Sequence
-1. `cli.py` → `scan_command()`: Builds minimal `AgentState`.
-2. `static/analyzer.py` → `StaticAnalyzer.analyze()`: Runs 10 AST rules; returns findings.
-3. `semantic/analyzer.py` → `SemanticAnalyzer.review()` (if `--semantic` flag): LLM reviews intent.
-4. `cli.py` → renders findings table to stdout.
+1. `cli.py` → `run_scan()` → `StaticAnalyzer.analyze_file()` or `analyze_directory()`.
+2. With `--semantic` and a key: `SemanticAnalyzer`, merged with `findings.merge_reports()`.
+3. Prints `Report.format_text()` or JSON. Exit code 1 if anything is warning-level or above.
 
----
+## Flow: `monitor <script.py>`
 
-## Flow: Runtime Monitor — `sba monitor <script.py>`
+1. `cli.py` → `run_monitor()` → `RuntimeMonitorAgent.monitor_script()`.
+2. The script runs in a subprocess with the hooks attached; early alerts are streamed while it runs.
+3. The findings are printed as a report. No LLM is involved.
 
-### Call Sequence
-1. `cli.py` → `monitor_command()`: Builds `AgentState`, launches model execution.
-2. `runtime/instrument.py` → attaches hooks to all `nn.Module` layers.
-3. `runtime/hooks.py` → collects per-layer tensor statistics on each forward/backward pass.
-4. `runtime/anomaly.py` → `AnomalyDetector.check()`: Flags gradient explosions, dead activations, NaN/Inf.
-5. `runtime/alerts.py` → emits alerts to stdout in real time.
-6. `agents/runtime_monitor_agent.py` → LLM consolidates alerts into a natural-language report.
+## Flow: `diagnose <script.py>`
 
----
+`cli.py` → `run_diagnose()`: the perception steps above, then `DiagnosisAgent`. Prints the ranked hypotheses. Nothing is patched.
 
-## Flow: Weight-Space Programming — `sba wsp <script.py> [--checkpoint ckpt.pt]`
+## Flow: `wsp [script.py] [--checkpoint FILE]` (read-only)
 
-### Call Sequence
+1. `cli.py` → `run_wsp()`.
+2. With `--checkpoint`: `wsp/inspector.py` → `WeightInspector.inspect_checkpoint()` loads the file with `weights_only=True` (or `safetensors`).
+3. With a script: `wsp/inspector.py` → `inspect_script()` runs it for `--max-steps` optimizer steps through `SubprocessSandbox.run_measured(save_weights=...)`. Inside the child, `script_runner.py` finds the models an optimizer trained and `Recorder.save_weights()` writes their tensors to a temp file, which is then inspected and deleted.
+4. `inspect_state_dict()` checks every floating-point tensor: non-finite values, exploded values, all-zero matrices, collapsed biases, heavy outliers and collapsed rank. Normalisation statistics and zero biases are not flagged.
+5. Prints a `WeightReport`. Exit code 1 for a warning or critical finding, 0 if clean, 2 if no weights could be read. Nothing is ever written to the script or the checkpoint.
 
-1. `cli.py` → `run_wsp()`: Parses CLI args (`script`, `--checkpoint`, `--max-iter`, `--dry-run`, `--yes`, `--events`). Instantiates `DualSupervisorAgent(DualConfig)`.
-2. `wsp/dual_supervisor.py` → `run()`: Starts iterative repair loop (up to `max_iterations`, default 3).
-3. **Simultaneous Perception Phase** (`_simultaneous_perception`):
-   - **Code-Space**:
-     - `static/analyzer.py` → `StaticAnalyzer.analyze_file()` (AST rules).
-     - `agents/runtime_monitor_agent.py` → `RuntimeMonitorAgent.monitor_script()` (live telemetry hooks).
-     - Merges into `Report`.
-   - **Weight-Space**:
-     - `wsp/dual_supervisor.py` → `_try_extract_model()`: Instantiates model from script, or reads `--checkpoint`.
-     - `wsp/inspector.py` → `WeightInspector.inspect_model()` / `inspect_checkpoint()`:
-       - SVD singular value decomposition, condition number $\kappa = \sigma_1 / \sigma_k$.
-       - Spectral entropy effective rank $r_{eff} = \exp(H(p_i))$.
-       - Kurtosis / heavy-tailed outlier check on weights.
-       - Extreme bias collapse / dead ReLU check ($bias \le -15.0$).
-       - Emits `WeightReport` with `List[WeightFinding]`.
-4. **Dual Solution Synthesis** (`_synthesize_dual_solution`):
-   - Weight findings $\rightarrow$ `wsp/editor.py` synthesizes surgical `WeightPatch` (subspace excision, low-rank delta, bias centering, outlier clamping).
-   - Code findings $\rightarrow$ `repair/recipes.py` synthesizes AST code diff.
-   - Combines into `DualSolution`.
-5. **Interactive User Approval Gate** (`_prompt_user_approval`):
-   - Emits `wsp_proposal` event (for TUI/API).
-   - In CLI interactive mode: prints rationale, code diff, and weight surgery details ($\Delta W$ norm, affected parameter count & percentage).
-   - Prompts user: `Implement this proposed solution and enter validation gate? [y/N/stop]`.
-   - If user rejects or chooses stop $\rightarrow$ aborts cleanly.
-6. **Empirical Validation Gates**:
-   - Applies code diff and/or weight patch.
-   - **Gate 1**: `validation/overfit_agent.py` → `OverfitOracleAgent.check_code()` (single-batch numeric sanity).
-   - **Gate 2**: `validation/multiseedagent.py` → `MultiseedAgent.evaluate_code_across_seeds()` (paired t-test / multi-seed comparison across seeds).
-   - If both gates pass:
-     - If not dry-run: writes patched code/checkpoint to disk.
-     - Emits success event and exits 0.
-   - If gates fail:
-     - Feedback (e.g. `Gate 1 passed=False`, `loss difference`) recorded in `feedback_history`.
-     - Loops back to Step 3 for next iteration (up to 3 iterations max).
+## Flow: `ui`
+
+`cli.py` → `_launch_ui()` starts `tui/dist/cli.js` with Node. Each screen runs one of the commands above with `--events` and renders the NDJSON events from `events.py`. The Fix screen runs `fix --dry-run`, shows the validated patch, and runs `apply` only if the user confirms.

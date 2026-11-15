@@ -13,7 +13,7 @@ Automate the full detect → diagnose → fix → validate workflow for silent b
 - Gate 1 (overfit oracle) + Gate 2 (multi-seed) validation
 - Experience memory (ChromaDB + SQLite)
 - Meta-evolution agent
-- CLI: `scan`, `monitor`, `diagnose`, `fix`, `doctor`
+- CLI: `scan`, `monitor`, `diagnose`, `fix`, `apply`, `doctor`
 
 ## Out-of-Scope
 - Support for JAX or TensorFlow (PyTorch only)
@@ -36,7 +36,7 @@ Automate the full detect → diagnose → fix → validate workflow for silent b
 ## Open Questions & Assumptions
 - Assumed: Users run `sba fix` on a single training script file, not a full project directory.
 - Open: What is the target repair rate on real (non-benchmark) training scripts?
-- Open: Should `--apply` be opt-in (current) or default?
+- Decided 2026-11-15 (D-009): there is no `--apply` flag. `fix` writes a validated patch; `fix --dry-run` followed by `apply` is the review-first path, and the terminal UI always uses it.
 
 ### Timeline Log
 - 2026-11-04 12:00 - Feature fully implemented; 404 tests passing; documentation suite initialized

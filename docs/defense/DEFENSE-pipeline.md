@@ -8,8 +8,9 @@
   3. Diagnosis: Causal engine maps findings to 21 bug taxonomy entries via weighted symptom dampening → ranked `DiagnosticHypotheses`.
   4. Fix: Contextual MAB selects repair strategy → few-shot memory retrieval from ChromaDB → ReAct LLM generates unified diff `PatchCandidate`.
   5. Validation Gate 1: One-batch overfit oracle checks numeric sanity and gradient flow on patched script.
-  6. Validation Gate 2: 5 isolated subprocesses run with different seeds → paired t-test + KS-test + Cohen's d → `ValidationVerdict`.
-  7. If accepted: trajectory stored in SQLite + ChromaDB; bandit reward updated. If rejected: rejection reason injected into LLM prompt; retry up to 3 times.
+  6. Validation Gate 2: baseline and patched runs on 3 to 5 seeds in separate subprocesses → paired t-test + KS-test + Cohen's d → `ValidationVerdict`.
+  7. Every attempt is stored in SQLite and the bandit reward updated; accepted repairs are also embedded in ChromaDB. If rejected: the rejection reason goes into the next prompt; up to 3 attempts.
+  8. Separate from repair: `wsp` gives a read-only report on the trained weights. It never edits anything.
 
 - **Core Rationale (Why X over Y):**
   - LangGraph over Celery: explicit auditable state machine; no server infrastructure needed.
@@ -20,20 +21,20 @@
 - **Data Structure & Storage:**
   - `AgentState` dataclass: single shared state contract across all LangGraph nodes.
   - `Finding` → `DiagnosticHypothesis` → `PatchCandidate` → `ValidationVerdict`: typed pipeline contract defined in `schemas.py`.
-  - Experience store: ChromaDB (1536-dim embeddings of bug descriptions) + SQLite (full trajectory JSON + reward scalar).
+  - Experience store: ChromaDB (384-dimension `all-MiniLM-L6-v2` embeddings of accepted repairs) + SQLite (`experience.sqlite3`: every attempt, bandit statistics, lessons).
   - Multi-seed metrics: communicated via `__METRICS__:{...}` stdout protocol from subprocess to validator.
 
 - **Malicious Abuse Vectors & Controls:**
   - *Malicious training script*: Script runs in isolated subprocess with no additional sandboxing beyond OS process boundaries. Gap: no seccomp filter; malicious script has user-level filesystem access.
-  - *Prompt injection via LLM response*: LLM output is strictly schema-validated; patch is applied to temp copy first; original modified only on `--apply`.
+  - *Prompt injection via LLM response*: LLM output is schema-validated; `patch_guard` rejects patches that add process, network or file-deletion calls or change more than 40 lines; the patch runs on a temp copy first; the original is written only after both gates pass (or, with `fix --dry-run`, only when the user runs `apply`). There is no `--apply` flag.
   - *Poisoned experience store*: ChromaDB + SQLite live in `~/.silent_bug_agent/`; require local user access; `meta_evolution.py` ablates low-quality trajectories.
-  - *Path traversal via CLI args*: Path resolved to absolute; must be an existing `.py` file. Gap: symlinks not checked.
+  - *Path traversal via CLI args*: Path resolved to absolute and must be an existing file. Gap: the extension is not checked and symlinks are followed.
 
 - **Failure Modes & Alerting:**
   - First failure point: LLM API down → agents fall back to deterministic tools only; pipeline continues with reduced capability.
-  - Second failure point: Validation subprocess OOM → seed excluded; if <3 seeds complete, patch rejected.
-  - Pipeline abort: `AgentState.status = ABORTED` after `max_iterations` retries; CLI exits code 1.
-  - Current monitoring: stdout structured logging per agent. Gap: no Sentry, no Prometheus.
+  - Second failure point: a validation subprocess crashes or runs out of memory → the patch is rejected. One failed seed is enough; seeds are not dropped.
+  - Budget spent: `AgentState.status = FAILED` with the last rejection reason; CLI exits code 1.
+  - Current monitoring: the CLI report, `--json`, and `--events` (NDJSON). Gap: no structured logging, Sentry or Prometheus.
 
 - **Future Improvements:**
   - Add OS-level sandbox (Linux `seccomp` / Windows AppContainer) to the validation subprocess.
@@ -41,4 +42,5 @@
   - Add cryptographic signing of experience trajectories to prevent poisoning.
   - Implement `--fast` flag to skip Gate 2 (multi-seed) for time-constrained runs.
   - Integrate Sentry and Prometheus for production observability.
-  - Resolve the `validation/multiseedagent.py` dead file (duplicate of `multiseed_agent.py`).
+  - Measure the live LLM repair and damage rates (`examples/evaluate_pipeline.py` with real keys); only the offline rates have been measured.
+  - Evaluate on real training scripts, not only the eight synthetic benchmarks.

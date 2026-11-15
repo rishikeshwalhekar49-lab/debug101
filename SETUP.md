@@ -1,6 +1,6 @@
 # Setup and Installation Guide
 
-This guide covers everything required to install, configure, verify, and run the **Deep Learning Bug Detector (`silent-bug-agent`)**, including the Python multi-agent backend, the Weight-Space Programming (WSP) engine, and the Pastel + Ink terminal UI (TUI).
+This guide covers everything required to install, configure, verify, and run the **Deep Learning Bug Detector (`silent-bug-agent`)**, including the Python multi-agent backend, the read-only weight inspector (`wsp`), and the Pastel + Ink terminal UI (TUI).
 
 ---
 
@@ -8,7 +8,7 @@ This guide covers everything required to install, configure, verify, and run the
 
 | Component | Minimum Version | Recommended | Notes |
 |---|---|---|---|
-| **Python** | 3.10+ | 3.11 or 3.12 | Core multi-agent pipeline & PyTorch |
+| **Python** | 3.10+ | 3.12 | Core multi-agent pipeline & PyTorch. 3.12 is the version in `.python-version`; CI tests 3.10 and 3.12. Python 3.14 has not been tested with the full suite. |
 | **Node.js** | 18.0.0+ | 20.x or 22.x | Required for the interactive Pastel + Ink TUI |
 | **npm** | 9.x+ | 10.x+ | Package manager for `tui/` |
 | **Operating System** | Windows 10/11, macOS (Apple Silicon M1-M4 & Intel), or Linux | Any | Fully CPU-compatible (no dedicated GPU required) |
@@ -82,12 +82,12 @@ The rich interactive dashboard is built using Node.js, React, Ink, and Pastel. I
 
 ```bash
 cd tui
-npm install
+npm ci
 npm run build
 cd ..
 ```
 
-This compiles TypeScript source files in `tui/commands/` and `tui/components/` into `tui/dist/cli.js`.
+`npm ci` installs the exact versions recorded in `package-lock.json`. This compiles TypeScript source files in `tui/commands/` and `tui/components/` into `tui/dist/cli.js`.
 
 ---
 
@@ -163,6 +163,8 @@ python -m silent_bug_agent ui
 * **Go Back**: Press `Esc` or `b`
 * **Quit**: Press `q`
 
+The **Fix** screen always validates a patch first and shows it while your file is still unchanged. It writes the file only if you then choose "Apply this patch to the file". The bundled examples in the menu are protected and are never edited (see below), so pick "Custom file path" with a copy to see a patch applied.
+
 ---
 
 ### 5.2 Command Line Interface (CLI)
@@ -194,25 +196,36 @@ Correlates findings through the causal dampening graph and ranks hypotheses:
 python -m silent_bug_agent diagnose examples/sample_scripts/buggy_mnist.py
 ```
 
-#### 4. Autonomous Repair Pipeline (`fix`)
-Runs the full supervisor loop: Perception $\rightarrow$ Diagnosis $\rightarrow$ Patch Synthesis $\rightarrow$ Gate 1 (Overfit Oracle) $\rightarrow$ Gate 2 (Multi-Seed Sandbox) $\rightarrow$ Apply:
-```bash
-# Preview patch diff without writing to disk
-python -m silent_bug_agent fix examples/sample_scripts/benchmark_06_dead_relu.py --dry-run
+#### 4. Autonomous Repair Pipeline (`fix`, then `apply`)
+Runs the full supervisor loop: Perception $\rightarrow$ Diagnosis $\rightarrow$ Patch Synthesis $\rightarrow$ Gate 1 (Overfit Oracle) $\rightarrow$ Gate 2 (Multi-Seed Sandbox).
 
-# Run full repair loop (applies verified patch to disk)
-python -m silent_bug_agent fix examples/sample_scripts/benchmark_06_dead_relu.py
+> [!IMPORTANT]
+> **Work on a copy, not on the bundled examples.** The tests and the published results depend on the bugs planted in `examples/`. `fix` and `apply` therefore refuse to edit those files: they show the validated patch and leave the file alone.
+
+```bash
+# Make a copy to work on
+cp examples/sample_scripts/benchmark_06_dead_relu.py my_train.py     # Windows: copy examples\sample_scripts\benchmark_06_dead_relu.py my_train.py
+
+# Validate a patch and show it. Nothing is written.
+python -m silent_bug_agent fix my_train.py --dry-run
+
+# Write exactly the patch that was validated. The original is kept as my_train.py.orig
+python -m silent_bug_agent apply my_train.py
+
+# Or validate and write in one step
+python -m silent_bug_agent fix my_train.py
 ```
 
-#### 5. Weight-Space Programming (`wsp`)
-Simultaneously audits source code AST and raw weight matrices (SVD spectral condition number, kurtosis outliers, dead bias collapse) with an interactive human approval gate:
+#### 5. Weight inspection (`wsp`, read-only)
+Reads a model's weights and reports anomalies that the code does not show: NaN or exploded values, a zeroed weight matrix, biases too negative for a ReLU to fire, collapsed rank. It never changes a script or a checkpoint.
 ```bash
-# Interactive mode (prompts before applying and entering validation gates)
+# Train the script for 60 steps in the sandbox, then inspect the weights it produced
 python -m silent_bug_agent wsp examples/sample_scripts/benchmark_06_dead_relu.py
 
-# Non-interactive / CI mode
-python -m silent_bug_agent wsp examples/sample_scripts/benchmark_06_dead_relu.py --dry-run --yes
+# Inspect a saved state_dict instead (loaded with weights_only=True)
+python -m silent_bug_agent wsp --checkpoint model.pt
 ```
+The exit code is 1 when a warning or critical anomaly is found, 0 when the weights look ordinary, and 2 when no weights could be read.
 
 ---
 
@@ -231,8 +244,11 @@ SBA_NO_DOTENV=1 python -m pytest tests/ -v
 
 Targeted test suites:
 ```bash
-# Weight-Space Programming (WSP) unit tests
+# Weight inspector
 python -m pytest tests/test_wsp.py -v
+
+# Dry run, apply and the TUI event stream
+python -m pytest tests/test_apply_and_events.py -v
 
 # AST static analyzer & rules
 python -m pytest tests/test_static.py -v
@@ -249,17 +265,18 @@ python -m pytest tests/test_multiseed_agent.py -v
 ## 7. Troubleshooting & FAQ
 
 ### Q: `npm run build` fails with TypeScript errors
-**Fix**: Ensure your Node.js version is $\ge 18$. Run `node -v` to check. In `tui/`, delete `node_modules` and re-run:
+**Fix**: Ensure your Node.js version is $\ge 18$. Run `node -v` to check. In `tui/`, delete `node_modules` and reinstall from the lockfile:
 ```bash
 cd tui
-rm -rf node_modules package-lock.json  # Windows: Remove-Item -Recurse -Force node_modules, package-lock.json
-npm install
+rm -rf node_modules  # Windows: Remove-Item -Recurse -Force node_modules
+npm ci
 npm run build
 cd ..
 ```
+Keep `package-lock.json`: it is what makes everyone build with the same dependency versions.
 
 ### Q: `sqlite3.OperationalError: unable to open database file` on Windows
-**Fix**: In restricted sandbox environments, user directory permissions on `~/.silent_bug_agent/` may be locked. The system automatically falls back to an in-memory database and creates `<project_root>/.silent_bug_agent/`. You can also set `SBA_HOME` explicitly in `.env`:
+**Fix**: In restricted environments `~/.silent_bug_agent/` may not be writable. The agent then uses `<project_root>/.silent_bug_agent/`. If that cannot be written either, it keeps the run's memory in RAM, says so in the report, and loses it when the run ends. To choose the folder yourself, set `SBA_HOME` in `.env`:
 ```dotenv
 SBA_HOME=./.silent_bug_agent
 ```
@@ -273,7 +290,7 @@ SBA_HOME=./.silent_bug_agent
 ### Q: Does the multi-seed validation gate take too long?
 **Fix**: Gate 2 runs multiple isolated subprocesses across distinct random seeds to compute statistical tests ($p < 0.05$). For rapid local prototyping, decrease seed counts:
 ```bash
-python -m silent_bug_agent fix examples/sample_scripts/buggy_mnist.py --seeds 3 --no-llm
+python -m silent_bug_agent fix my_train.py --seeds 3 --no-llm
 ```
 
 ### Q: How do I pass script-specific arguments?

@@ -68,7 +68,7 @@
 
 ### Access Control & Permissions
 - Write Access: `agents/fix_synthesizer_agent.py`, `repair/recipes.py`
-- Read Access: `validation/overfit_agent.py`, `validation/multiseed_agent.py`, `validation/analyzer.py`
+- Read Access: `validation/overfit_agent.py`, `validation/multiseedagent.py`, `validation/analyzer.py`
 
 ---
 
@@ -93,15 +93,15 @@
 ```
 
 ### Access Control & Permissions
-- Write Access: `validation/overfit_agent.py`, `validation/multiseed_agent.py`, `validation/analyzer.py`
+- Write Access: `validation/overfit_agent.py`, `validation/multiseedagent.py`, `validation/analyzer.py`
 - Read Access: `agents/supervisor.py`, `learning/experience_store.py`
 
 ---
 
 ## Entity / Schema: `ExperienceTrajectory` (SQLite + ChromaDB)
-- Storage Medium: SQLite (`~/.silent_bug_agent/trajectories.db`) + ChromaDB (`~/.silent_bug_agent/chroma/`)
-- Expected Volume: ~100–10,000 trajectories over lifetime; ChromaDB embeddings ~1536 dims
-- Access Pattern: Write on accepted patch; read for few-shot retrieval (95% reads / 5% writes)
+- Storage Medium: SQLite (`~/.silent_bug_agent/experience.sqlite3`) + ChromaDB (`~/.silent_bug_agent/chroma/`). A validated patch waiting for `apply` is kept as JSON in `~/.silent_bug_agent/pending/`.
+- Expected Volume: ~100–10,000 trajectories over lifetime; ChromaDB embeddings are 384 dimensions (`all-MiniLM-L6-v2`)
+- Access Pattern: every repair attempt is written to SQLite, accepted or not; only accepted repairs are embedded and recalled as few-shot examples
 
 ### Shape / Structure
 ```json
