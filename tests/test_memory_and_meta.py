@@ -77,3 +77,16 @@ def test_chroma_vectors_when_available(tmp_path):
     if memory.notes:  # no network for the embedding model: the fallback must still work
         assert "word overlap" in memory.notes[0]
     assert found and found[0]["bug_id"] == "dead_relu"
+
+
+def test_memory_keeps_working_in_ram_when_its_file_cannot_be_opened(tmp_path):
+    """A folder that cannot hold the database must not crash the run, on the first use or any later one."""
+    blocker = tmp_path / "a_file_not_a_folder"
+    blocker.write_text("x", encoding="utf-8")
+    memory = ExperienceStore(blocker / "memory", use_vectors=False)
+    assert "held in RAM" in memory.notes[0]
+    first = attempt(memory)
+    memory.update_bandit("ctx", "direct_edit", 1.0)
+    memory.update_bandit("ctx", "direct_edit", 0.5)
+    assert memory.count() == 1 and memory.load_bandit("ctx")["direct_edit"] == {"count": 2.0, "reward_sum": 1.5}
+    assert [f["id"] for f in memory.recall("missing_zero_grad", k=3)] == [first]

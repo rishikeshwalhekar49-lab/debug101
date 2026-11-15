@@ -76,7 +76,7 @@ class EventEmitter:
 
     def patch(self, bug_id: str, strategy: str, source: str,
               diff: str, confidence: float) -> None:
-        """Emit a generated patch candidate."""
+        """Emit a generated patch candidate. It has not been validated yet; see ``accepted_patch``."""
         self._emit({
             "event": "patch",
             "bug_id": bug_id,
@@ -99,6 +99,34 @@ class EventEmitter:
             "effect_size": effect_size,
             "notes": notes,
         })
+
+    def accepted_patch(self, bug_id: str, strategy: str, source: str, diff: str, confidence: float, *,
+                       applied: bool, backup: Optional[str] = None, pending: bool = False,
+                       blocked: Optional[str] = None) -> None:
+        """Emit the one patch that passed validation, and what happened to the file.
+
+        ``applied`` is true only if the script was written. ``pending`` means the patch is
+        kept for the ``apply`` command. ``blocked`` gives the reason it cannot be applied."""
+        self._emit({
+            "event": "accepted_patch",
+            "bug_id": bug_id,
+            "strategy": strategy,
+            "source": source,
+            "diff": diff,
+            "confidence": confidence,
+            "applied": applied,
+            "backup": backup,
+            "pending": pending,
+            "blocked": blocked,
+        })
+
+    def applied(self, target: str, backup: Optional[str], bug_id: str = "") -> None:
+        """Emit that ``apply`` wrote a pending patch to the script."""
+        self._emit({"event": "applied", "target": target, "backup": backup, "bug_id": bug_id})
+
+    def weight_report(self, data: Dict[str, Any]) -> None:
+        """Emit a read-only weight inspection report."""
+        self._emit({"event": "weight_report", "data": data})
 
     def result(self, data: Dict[str, Any]) -> None:
         """Emit the final aggregated result object."""

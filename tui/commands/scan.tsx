@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Box, Text, useApp, useInput } from 'ink';
 import Spinner from 'ink-spinner';
 import z from 'zod';
-import { runPython, type FindingData, type SbaEvent } from '../utils/pythonBridge.js';
+import { resolveTarget, runPython, type FindingData, type SbaEvent } from '../utils/pythonBridge.js';
 import { SeverityBadge } from '../components/Badge.js';
 
 export const options = z.object({
@@ -23,7 +23,8 @@ type Props = {
 type Phase = 'idle' | 'static_analysis' | 'semantic_review' | 'done' | 'error';
 
 export default function Scan({ options: opts = { semantic: false }, args: cmdArgs = [''], onBack, isEmbedded = false }: Props) {
-  const target = cmdArgs[0] ?? '';
+  const shown = cmdArgs[0] ?? ''; // what the user typed, for display
+  const target = resolveTarget(shown);
   const { exit } = useApp();
 
   const [phase, setPhase] = useState<Phase>('idle');
@@ -101,7 +102,7 @@ export default function Scan({ options: opts = { semantic: false }, args: cmdArg
         <Text bold color="#87CEEB">
           ⬡ Scan
         </Text>
-        <Text color="#636E72">{target}</Text>
+        <Text color="#636E72">{shown}</Text>
       </Box>
 
       {phase !== 'done' && (

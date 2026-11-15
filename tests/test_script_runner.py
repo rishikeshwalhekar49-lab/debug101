@@ -66,3 +66,24 @@ def test_overfit_gate_passes_learning_code_and_fails_frozen_code():
     broken = SCRIPT.replace("STEPS", "50").replace("loss = ((model(x) - y) ** 2).mean()",
                                                    "loss = ((model(x) - y) ** 2).mean() * float('nan')")
     assert "NaN" in gate.check_code(broken)["reason"]
+
+
+def test_trained_weights_can_be_saved_for_inspection(tmp_path):
+    """The weights come from the sandboxed run, as plain tensors that load without unpickling code."""
+    import torch
+
+    target = tmp_path / "weights.pt"
+    result = run(SCRIPT.replace("STEPS", "50"), max_steps=5, save_weights=str(target))
+    report = result.run_report
+    assert report["steps"] == 5 and report["weights_saved"] and report["weights_models"] == ["Linear"]
+    weights = torch.load(target, map_location="cpu", weights_only=True)
+    assert set(weights) == {"weight", "bias"} and weights["weight"].shape == (1, 4)
+    # the saved tensors are the trained ones, not the initial ones
+    torch.manual_seed(42)
+    assert not torch.equal(weights["weight"], torch.nn.Linear(4, 1).weight.detach())
+
+
+def test_no_weights_are_saved_when_nothing_was_trained(tmp_path):
+    target = tmp_path / "weights.pt"
+    report = run("import torch\nmodel = torch.nn.Linear(2, 2)\n", save_weights=str(target)).run_report
+    assert not report["weights_saved"] and not target.exists() and "no model was trained" in report["weights_note"]

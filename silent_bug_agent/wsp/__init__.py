@@ -1,29 +1,11 @@
-"""Weight-Space Programming (WSP) Module.
+"""Weight inspection: a read-only look at a model's numbers.
 
-Bridges code-space inspection with direct weight-space perception and surgery.
-Natively reads, analyzes, diagnoses, and edits raw neural network weights
-alongside source code AST patterns.
+It reports anomalies in trained weights (non-finite or exploded values, zeroed
+matrices, collapsed biases and rank). It does not edit weights: a repair belongs in
+the training code, where `fix` can test it against the validation gates.
 """
 
-from .schemas import (
-    DualSolution,
-    WeightAnomalyType,
-    WeightFinding,
-    WeightPatch,
-    WeightReport,
-    WeightSurgeryType,
-)
-from .inspector import WeightInspector
-from .editor import WeightEditor
+from .inspector import WeightInspector, inspect_script
+from .schemas import WeightAnomalyType, WeightFinding, WeightReport
 
-__all__ = [
-    "WeightAnomalyType",
-    "WeightFinding",
-    "WeightReport",
-    "WeightSurgeryType",
-    "WeightPatch",
-    "DualSolution",
-    "WeightInspector",
-    "WeightEditor",
-]
-
+__all__ = ["WeightAnomalyType", "WeightFinding", "WeightReport", "WeightInspector", "inspect_script"]

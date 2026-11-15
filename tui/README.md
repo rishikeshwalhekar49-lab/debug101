@@ -4,16 +4,18 @@ A terminal UI for `silent-bug-agent` built using **Pastel** and **Ink** (React f
 
 ## Features
 
-- **Full Command Parity**: `scan`, `monitor`, `diagnose`, `fix`, `doctor`.
-- **Live Event Streaming**: Subprocesses stream NDJSON events for real-time progress meters, spinners, and phase steppers.
-- **Interactive Patch Approval**: Inspect syntax-colored diffs and choose between `[Apply to File]`, `[Keep Dry-Run]`, and `[Retry Fix]`.
-- **Pastel Palette Theme**: Mint, cyan, lavender, and amber pastel accents with rounded border boxes.
+- **Screens**: `scan`, `monitor`, `diagnose`, `fix`, `wsp` (read-only weight inspection), `doctor`.
+- **Live event streaming**: each screen runs `python -m silent_bug_agent <command> --events` and renders the NDJSON events it prints.
+- **Real patch approval**: the Fix screen always runs the pipeline as a dry run, so your file is unchanged when the validated diff is shown. Choosing "Apply this patch to the file" runs `python -m silent_bug_agent apply <script>`, which writes exactly that patch and keeps the original as `<name>.py.orig`. Choosing not to apply leaves the file as it was.
+- **Protected examples**: the bundled scripts under `examples/` are never edited. Use a copy to see a patch applied.
+
+A relative script path is resolved from the folder you launched from. There are no automated tests for the UI itself; CI checks that it builds, and the event stream is tested from Python (`tests/test_apply_and_events.py`).
 
 ## Setup
 
 ```bash
 cd tui
-npm install
+npm ci
 npm run build
 ```
 
@@ -33,8 +35,11 @@ sba-ui scan ../examples/sample_scripts/buggy_mnist.py --semantic
 # Diagnose root causes:
 sba-ui diagnose ../examples/sample_scripts/buggy_mnist.py
 
-# Run the autonomous repair loop:
-sba-ui fix ../examples/sample_scripts/buggy_mnist.py
+# Validate a patch for your own script, then choose whether to apply it:
+sba-ui fix path/to/my_train.py
+
+# Read-only weight inspection:
+sba-ui wsp ../examples/sample_scripts/benchmark_06_dead_relu.py
 ```
 
 ## From the Python CLI

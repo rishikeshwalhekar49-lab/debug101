@@ -47,7 +47,9 @@ class ValidationAnalyzerAgent:
         if bug_gone is False and not multiseed.accepted:
             return Decision(False, "The same bug is still detected after the patch, and results did not improve.", "bug_remains")
         if multiseed.accepted:
-            return Decision(True, f"Gate 2 passed: {multiseed.notes}", "statistics")
+            # "statistics" means a significance test was passed; a baseline that could not run is a different route
+            route = "baseline_failed" if multiseed.extra.get("baseline_failures") else "statistics"
+            return Decision(True, f"Gate 2 passed: {multiseed.notes}", route)
         if bug_gone and strong_evidence and self._not_worse(multiseed):
             return Decision(True, "The detected bug is gone and results did not get worse, "
                                   f"though the improvement was not significant ({multiseed.notes})", "bug_removed")

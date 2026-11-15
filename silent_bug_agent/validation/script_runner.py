@@ -7,7 +7,9 @@ It works on any script, because nothing in the script has to cooperate:
 * every seed the script sets is shifted by the run's seed, so a hard-coded
   `torch.manual_seed(42)` still gives different runs across seeds;
 * losses are read from `backward()` and steps from a global optimizer hook;
-* `--max-steps` stops training cleanly, which keeps CPU-only runs short.
+* `--max-steps` stops training cleanly, which keeps CPU-only runs short;
+* `--save-weights` writes the trained models' tensors to a file when the run ends,
+  so the weights can be inspected without importing the script anywhere else.
 
 In `overfit` mode each step sees the same batch: a DataLoader repeats its first
 batch, and for data drawn inside the loop the random state is rewound after each
@@ -24,11 +26,15 @@ import sys
 from typing import Any, Dict, List, Optional
 
 MAX_LOSSES = 5000
+MAX_SAVED_VALUES = 50_000_000  # about 200 MB of float32; larger models are not written to disk
 
 
 class Recorder:
-    def __init__(self, seed: int, mode: str, max_steps: Optional[int]) -> None:
+    def __init__(self, seed: int, mode: str, max_steps: Optional[int], keep_models: bool = False) -> None:
         self.seed, self.mode, self.max_steps = seed, mode, max_steps
+        self.keep_models = keep_models
+        self.models: Dict[int, Any] = {}  # id(model) -> model an optimizer trained, kept alive until the report
+        self._optimizers_seen: set = set()
         self.losses: List[float] = []
         self.steps = 0
         self.params: Dict[int, bool] = {}  # id(trainable parameter) -> ever had a non-zero gradient
@@ -85,7 +91,30 @@ class Recorder:
         torch.utils.data.DataLoader.__iter__ = repeating
         self._undo.append(lambda: setattr(torch.utils.data.DataLoader, "__iter__", original_iter))
 
+    def _remember_models(self, optimizer: Any) -> None:
+        """Find the models this optimizer trains. The script's variables are gone once it
+        ends, so the models are found now and held until the weights are written."""
+        import gc
+
+        import torch
+
+        trained = {id(p) for group in optimizer.param_groups for p in group["params"]}
+        modules = []
+        for candidate in gc.get_objects():
+            try:
+                if isinstance(candidate, torch.nn.Module):
+                    modules.append(candidate)
+            except Exception:  # noqa: BLE001 - some proxy objects raise on isinstance
+                continue
+        children = {id(child) for module in modules for child in module.children()}
+        for module in modules:
+            if id(module) not in children and any(id(p) in trained for p in module.parameters()):
+                self.models.setdefault(id(module), module)
+
     def _before_step(self, optimizer: Any, args: Any, kwargs: Any) -> None:
+        if self.keep_models and id(optimizer) not in self._optimizers_seen:
+            self._optimizers_seen.add(id(optimizer))
+            self._remember_models(optimizer)
         for group in optimizer.param_groups:
             for parameter in group["params"]:
                 if not parameter.requires_grad:
@@ -114,6 +143,29 @@ class Recorder:
         random.setstate(self._rng[1])
         if self._rng[2] is not None:
             sys.modules["numpy"].random.set_state(self._rng[2])
+
+    def save_weights(self, path: str) -> Dict[str, Any]:
+        """Write every trained model's tensors as a plain {name: tensor} file; returns what was written."""
+        import torch
+
+        models = list(self.models.values())
+        tensors: Dict[str, Any] = {}
+        for index, model in enumerate(models):
+            prefix = f"{type(model).__name__}{index}." if len(models) > 1 else ""
+            for name, tensor in model.state_dict().items():
+                if isinstance(tensor, torch.Tensor):
+                    tensors[prefix + name] = tensor.detach().to("cpu").clone()
+        values = sum(t.numel() for t in tensors.values())
+        info: Dict[str, Any] = {"weights_saved": False, "weights_models": [type(m).__name__ for m in models],
+                                "weights_values": values}
+        if not tensors:
+            info["weights_note"] = "no model was trained by an optimizer before the run ended"
+        elif values > MAX_SAVED_VALUES:
+            info["weights_note"] = f"the model has {values} values, above the {MAX_SAVED_VALUES} limit for inspection"
+        else:
+            torch.save(tensors, path)
+            info["weights_saved"] = True
+        return info
 
     def uninstall(self) -> None:
         for undo in reversed(self._undo):
@@ -155,18 +207,24 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--max-steps", type=int, default=None)
     parser.add_argument("--result", required=True)
     parser.add_argument("--as-file", default=None, help="path the script should believe it was loaded from")
+    parser.add_argument("--save-weights", default=None, help="write the trained models' tensors to this file")
     options = parser.parse_args(argv)
 
     from ..runtime.instrument import exec_script
 
     seed_everything(options.seed)
-    recorder = Recorder(options.seed, options.mode, options.max_steps)
+    recorder = Recorder(options.seed, options.mode, options.max_steps, keep_models=bool(options.save_weights))
     recorder.install()
     try:
         outcome = exec_script(options.script, script_args, display_path=options.as_file)
     finally:
         recorder.uninstall()
     report = recorder.report()
+    if options.save_weights:
+        try:
+            report.update(recorder.save_weights(options.save_weights))
+        except Exception as exc:  # noqa: BLE001 - a failed save must not hide the run's own result
+            report.update({"weights_saved": False, "weights_note": f"could not write the weights: {exc}"})
     report.update({"status": outcome.status, "error": outcome.error, "seconds": round(outcome.duration, 3)})
     with open(options.result, "w", encoding="utf-8") as handle:
         json.dump(report, handle)

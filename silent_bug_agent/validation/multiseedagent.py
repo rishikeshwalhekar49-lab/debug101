@@ -455,11 +455,15 @@ class MultiseedAgent:
             extra = stats_comparison.to_dict()
             extra["ks_test"] = compare_distributions(base_losses, patch_losses, alpha=self.alpha, prefer_test="ks_test").to_dict()
         else:
-            # Baseline crashed or had NaN, but patched code succeeded reliably on all seeds!
+            # The unpatched script crashed or diverged, so there are no baseline numbers to test against.
+            # The patch is accepted because it trains on every seed, and no statistic is reported:
+            # a made-up p-value here would be shown to the user as if it had been measured.
             accepted = True
-            p_val = 0.001
-            effect_size = 1.0
-            notes = "Baseline failed or produced NaNs, while candidate patch executed successfully across all seeds."
+            p_val = None
+            effect_size = None
+            failures = len(self.seeds) - len(base_losses)
+            notes = (f"No statistical test was possible: the unpatched script failed or gave no finite loss on "
+                     f"{failures} of {len(self.seeds)} seeds, while the patched script trained on all of them.")
             extra = {
                 "baseline_losses": base_losses,
                 "patched_losses": patch_losses,

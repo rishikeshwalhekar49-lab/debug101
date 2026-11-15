@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Box, Text, useApp, useInput } from 'ink';
 import Spinner from 'ink-spinner';
 import z from 'zod';
-import { runPython, type FindingData, type SbaEvent } from '../utils/pythonBridge.js';
+import { resolveTarget, runPython, type FindingData, type SbaEvent } from '../utils/pythonBridge.js';
 import { SeverityBadge } from '../components/Badge.js';
 
 export const options = z.object({
@@ -28,7 +28,8 @@ export default function Monitor({
   onBack,
   isEmbedded = false,
 }: Props) {
-  const script = cmdArgs[0] ?? '';
+  const shown = cmdArgs[0] ?? ''; // what the user typed, for display
+  const script = resolveTarget(shown);
   const { exit } = useApp();
   const [alerts, setAlerts] = useState<FindingData[]>([]);
   const [done, setDone] = useState(false);
@@ -86,7 +87,7 @@ export default function Monitor({
         <Text bold color="#7FFFD4">
           ⬡ Monitor
         </Text>
-        <Text color="#636E72">{script}</Text>
+        <Text color="#636E72">{shown}</Text>
       </Box>
 
       {!done && (

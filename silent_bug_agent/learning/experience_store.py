@@ -36,6 +36,14 @@ def _words(text: str) -> set:
     return set(re.findall(r"[a-z_]{3,}", text.lower()))
 
 
+class _SharedConnection(sqlite3.Connection):
+    """The in-memory fallback. Its data lives only while it stays open, and every method
+    here closes the connection it used, so closing this one is deliberately ignored."""
+
+    def close(self) -> None:
+        pass
+
+
 class ExperienceStore:
     def __init__(self, home: Optional[Path] = None, *, use_vectors: bool = True) -> None:
         self.home = Path(home) if home else data_home()
@@ -50,22 +58,31 @@ class ExperienceStore:
         self._vector_failed = False
         self._lock = threading.Lock()
         self._fallback_db: Optional[sqlite3.Connection] = None
-        with closing(self._connect()) as db, db:
-            db.executescript(_SCHEMA)
+        try:
+            with closing(self._connect()) as db, db:
+                db.executescript(_SCHEMA)
+        except sqlite3.Error as exc:  # the file opened but cannot be written, e.g. a read-only folder
+            self._use_memory(exc)
 
     def _connect(self) -> sqlite3.Connection:
         if self._fallback_db is not None:
             return self._fallback_db
         try:
             db = sqlite3.connect(self.path, timeout=10)
-            db.row_factory = sqlite3.Row
-            return db
-        except Exception as exc:
-            self.notes.append(f"memory: SQLite file failed ({exc}), using in-memory fallback")
-            self._fallback_db = sqlite3.connect(":memory:", check_same_thread=False)
-            self._fallback_db.row_factory = sqlite3.Row
-            self._fallback_db.executescript(_SCHEMA)
-            return self._fallback_db
+        except sqlite3.Error as exc:
+            return self._use_memory(exc)
+        db.row_factory = sqlite3.Row
+        return db
+
+    def _use_memory(self, exc: Exception) -> sqlite3.Connection:
+        """Keep working when the memory file cannot be used. Nothing learned in this run is saved."""
+        self.notes.append(f"memory: {self.path} could not be used ({exc}), so this run's memory is held in RAM "
+                          "and is lost when it ends. Set SBA_HOME to a writable folder to keep it.")
+        db = sqlite3.connect(":memory:", check_same_thread=False, factory=_SharedConnection)
+        db.row_factory = sqlite3.Row
+        db.executescript(_SCHEMA)
+        self._fallback_db = db
+        return db
 
     # ---------------------------------------------------------------- vectors
     def _vectors(self) -> Any:

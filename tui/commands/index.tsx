@@ -8,21 +8,22 @@ import Fix from './fix.js';
 import Wsp from './wsp.js';
 
 const COMMANDS = [
-  { key: 'w', label: 'wsp', name: 'WSP', description: 'Weight-Space Programming: Simultaneous Code + Weight surgery (SVD, loop excision, bias centering)' },
-  { key: '1', label: 'fix', name: 'FIX', description: 'Autonomous multi-agent repair loop (Perception → Diagnosis → Patch → Validation)' },
-  { key: '2', label: 'diagnose', name: 'DIAGNOSE', description: 'Causal engine root-cause ranking and hypothesis explanations' },
-  { key: '3', label: 'scan', name: 'SCAN', description: 'Deterministic AST static analyzer + LLM semantic code intent review' },
-  { key: '4', label: 'monitor', name: 'MONITOR', description: 'Live runtime PyTorch telemetry monitoring (loss, gradients, activations)' },
-  { key: '5', label: 'doctor', name: 'DOCTOR', description: 'Verify dependencies, environment, and LLM API connectivity' },
+  { key: '1', label: 'fix', name: 'FIX', description: 'Find a bug, write a patch, test it, then ask before changing your file' },
+  { key: '2', label: 'diagnose', name: 'DIAGNOSE', description: 'Rank the likely root causes of what the detectors found' },
+  { key: '3', label: 'scan', name: 'SCAN', description: 'Static rules over the code, without running it' },
+  { key: '4', label: 'monitor', name: 'MONITOR', description: 'Run the script under PyTorch hooks (loss, gradients, activations)' },
+  { key: '5', label: 'wsp', name: 'WEIGHTS', description: 'Read-only check of the trained weights (NaN, dead biases, collapsed rank)' },
+  { key: '6', label: 'doctor', name: 'DOCTOR', description: 'Check the installation, keys and models' },
 ];
 
+// Bundled examples are protected: Fix shows the validated patch but never edits them.
 const SAMPLE_SCRIPTS = [
-  { path: 'examples/sample_scripts/buggy_mnist.py', desc: 'Demo training with 3 silent bugs (missing zero_grad, eval mode)' },
-  { path: 'examples/sample_scripts/benchmark_01_missing_zero_grad.py', desc: 'Benchmark 01: Missing optimizer.zero_grad()' },
-  { path: 'examples/sample_scripts/benchmark_02_train_eval_mode.py', desc: 'Benchmark 02: Missing model.eval() before validation' },
-  { path: 'examples/sample_scripts/benchmark_04_softmax_before_crossentropy.py', desc: 'Benchmark 04: Duplicate softmax before CrossEntropyLoss' },
-  { path: 'examples/sample_scripts/benchmark_06_dead_relu.py', desc: 'Benchmark 06: Dead ReLUs silently extinguishing gradients' },
-  { path: 'examples/sample_scripts/clean_mnist.py', desc: 'Reference clean training script (should detect zero bugs)' },
+  { path: 'examples/sample_scripts/buggy_mnist.py', desc: 'Three planted bugs: softmax before the loss, no zero_grad, no input normalisation' },
+  { path: 'examples/sample_scripts/benchmark_01_missing_zero_grad.py', desc: 'Benchmark 01: missing optimizer.zero_grad()' },
+  { path: 'examples/sample_scripts/benchmark_02_train_eval_mode.py', desc: 'Benchmark 02: missing model.eval() before validation' },
+  { path: 'examples/sample_scripts/benchmark_04_softmax_before_crossentropy.py', desc: 'Benchmark 04: softmax before CrossEntropyLoss' },
+  { path: 'examples/sample_scripts/benchmark_06_dead_relu.py', desc: 'Benchmark 06: dead ReLU units from a bias initialisation' },
+  { path: 'examples/sample_scripts/clean_mnist.py', desc: 'A healthy script, for comparison' },
 ];
 
 type ViewMode = 'menu' | 'target_select' | 'custom_input' | 'executing';
@@ -119,7 +120,7 @@ export default function Index() {
     if (activeCommand === 'fix') {
       return (
         <Fix
-          options={{ maxIter: 3, maxRounds: 3, dryRun: false, noLlm: false, seeds: 5 }}
+          options={{ maxIter: 3, dryRun: false, noLlm: false, seeds: 5 }}
           args={[targetScript]}
           onBack={() => setMode('menu')}
           isEmbedded={true}
@@ -129,7 +130,7 @@ export default function Index() {
     if (activeCommand === 'wsp') {
       return (
         <Wsp
-          options={{ maxIter: 3, dryRun: false }}
+          options={{ maxSteps: 60 }}
           args={[targetScript]}
           onBack={() => setMode('menu')}
           isEmbedded={true}
@@ -174,7 +175,7 @@ export default function Index() {
         </Text>
         <Box marginTop={1}>
           <Text color="#B2BEC3">
-            {'  Autonomous Perception · Causal Diagnosis · Repair Synthesis · Empirical Validation'}
+            {'  Perception · Causal Diagnosis · Repair Synthesis · Empirical Validation'}
           </Text>
         </Box>
       </Box>

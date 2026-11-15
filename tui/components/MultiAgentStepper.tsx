@@ -56,12 +56,12 @@ export function MultiAgentStepper({ steps }: StepperProps) {
 
 export function buildFixSteps(): Step[] {
   return [
-    { id: 'perception', label: 'Perception (Static + Runtime + Intent)', status: 'pending' },
-    { id: 'diagnosis', label: 'Diagnosis (Causal Engine)', status: 'pending' },
-    { id: 'repair', label: 'Fix Synthesis (MAB + ReAct)', status: 'pending' },
-    { id: 'gate1', label: 'Gate 1: Overfit Oracle', status: 'pending' },
-    { id: 'gate2', label: 'Gate 2: Multi-Seed Statistical Sandbox', status: 'pending' },
-    { id: 'memory', label: 'Experience Memory Persistence', status: 'pending' },
+    { id: 'perception', label: 'Perception (static rules + runtime hooks + LLM review)', status: 'pending' },
+    { id: 'diagnosis', label: 'Diagnosis (causal engine)', status: 'pending' },
+    { id: 'repair', label: 'Fix synthesis (LLM patch, or a rule recipe)', status: 'pending' },
+    { id: 'gate1', label: 'Gate 1: one-batch overfit check', status: 'pending' },
+    { id: 'gate2', label: 'Gate 2: multi-seed statistical test', status: 'pending' },
+    { id: 'memory', label: 'Experience memory', status: 'pending' },
   ];
 }
 

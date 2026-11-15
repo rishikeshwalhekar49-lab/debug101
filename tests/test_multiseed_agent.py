@@ -171,6 +171,32 @@ print(f'__METRICS__:{"final_loss": 1.0}')
     assert verdict.p_value == 1.0
 
 
+def test_multiseed_agent_reports_no_statistics_when_the_baseline_cannot_run():
+    """A baseline that crashes leaves nothing to test against, so no p-value may be invented for it."""
+    from silent_bug_agent.validation.analyzer import ValidationAnalyzerAgent
+
+    baseline_code = """
+raise RuntimeError("the unpatched script diverges")
+print('__METRICS__:{"final_loss": 1.0}')
+"""
+    candidate = _make_candidate(diff="""--- a/script.py
++++ b/script.py
+@@ -2,1 +2,1 @@
+-raise RuntimeError("the unpatched script diverges")
++loss = 1.0
+""")
+    agent = MultiseedAgent(seeds=[42, 1337, 2024], timeout_per_run=10.0)
+    verdict = agent.verify_patch(baseline_code=baseline_code, candidate=candidate)
+
+    assert verdict.accepted is True
+    assert verdict.p_value is None and verdict.effect_size is None
+    assert "No statistical test was possible" in verdict.notes and verdict.extra["baseline_failures"] == 3
+
+    overfit = ValidationVerdict(patch_candidate=candidate, accepted=True, validator="overfit_oracle")
+    final = ValidationAnalyzerAgent().analyze(candidate, overfit, verdict, bug_gone=True)
+    assert final.accepted and final.extra["route"] == "baseline_failed" and final.p_value is None
+
+
 # ---------------------------------------------------------------------------
 # AgentState & Supervisor Integration Tests
 # ---------------------------------------------------------------------------

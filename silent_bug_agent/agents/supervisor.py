@@ -27,6 +27,7 @@ from ..findings import Report, merge_reports
 from ..learning.experience_store import ExperienceStore
 from ..repair.loop import AutonomousRepairLoop
 from ..repair.patch_utils import apply_patch_to_file, apply_unified_diff
+from ..repair.pending import BUNDLED_EXAMPLE_NOTE, bundled_example, save_pending
 from ..schemas import AgentState, AgentStatus, PatchCandidate, ValidationVerdict
 from ..semantic.analyzer import SemanticAnalyzer
 from ..semantic.client import LLMError
@@ -56,6 +57,7 @@ class PipelineConfig:
     timeout_per_run: float = 180.0
     script_args: List[str] = field(default_factory=list)
     dry_run: bool = False
+    keep_pending: bool = False  # with dry_run: keep the validated patch so `apply` can write it after approval
     offline: bool = False
     meta_every: int = 5
     use_vectors: bool = True
@@ -205,13 +207,13 @@ class SupervisorAgent:
                  "reason": str(state.extra.get("repair_loop_result", {}).get("message"))})
             self._record(state, candidate, None)
         if self.emitter:
-            if state.patch_candidates:
+            if made:  # a candidate still to be validated, not an accepted patch
                 cand = state.patch_candidates[-1]
                 self.emitter.patch(
                     bug_id=cand.hypothesis_bug_id, strategy=cand.strategy.value,
                     source=cand.source, diff=cand.diff, confidence=cand.confidence
                 )
-            self.emitter.phase("repair", "done")
+            self.emitter.phase("repair", "done", candidate=made)
         return {"state": state}
 
     def _bug_gone(self, state: AgentState, candidate: PatchCandidate, patched: str) -> Optional[bool]:
@@ -248,11 +250,12 @@ class SupervisorAgent:
         overfit = verdicts[-1]
         if self.emitter:
             self.emitter.phase("gate1", "done", accepted=overfit.accepted)
-            self.emitter.phase("gate2", "start")
+            if overfit.accepted:
+                self.emitter.phase("gate2", "start")
         self.multiseed(state) if overfit.accepted else self._skip_gate_two(state, candidate)
         multiseed = verdicts[-1]
         if self.emitter:
-            self.emitter.phase("gate2", "done", accepted=multiseed.accepted)
+            self.emitter.phase("gate2", "done", accepted=multiseed.accepted, skipped=not overfit.accepted)
         bug_gone = self._bug_gone(state, candidate, patched) if overfit.accepted else None
         hypothesis = next((h for h in state.hypotheses if h.bug_id == candidate.hypothesis_bug_id), None)
         strong = hypothesis is None or hypothesis.extra.get("max_severity", "warning") != "info"
@@ -311,10 +314,16 @@ class SupervisorAgent:
             self._record(state, candidate, verdict)
             state.extra["outcome"] = "fixed"
             state.status = AgentStatus.DONE
-            if not self.config.dry_run:
+            if bundled_example(Path(state.target_file)):
+                state.extra["apply_blocked"] = BUNDLED_EXAMPLE_NOTE
+            elif not self.config.dry_run:
                 backup = apply_patch_to_file(state.target_file, candidate.diff)
                 state.extra["patch_applied"] = True
                 state.extra["backup"] = str(backup)
+            elif self.config.keep_pending:
+                save_pending(Path(state.target_file), candidate.diff, bug_id=candidate.hypothesis_bug_id,
+                             run_id=state.run_id)
+                state.extra["pending_patch"] = True
         else:
             state.status = AgentStatus.FAILED
             state.extra.setdefault("outcome", "not_fixed")
@@ -373,9 +382,16 @@ def describe_state(state: AgentState) -> Dict[str, Any]:
         "hypotheses": [{"bug_id": h.bug_id, "confidence": h.confidence, "explanation": h.description,
                         "diagnosed_by": h.extra.get("diagnosed_by")} for h in state.hypotheses],
         "attempts": [{"bug_id": v.patch_candidate.hypothesis_bug_id, "source": v.patch_candidate.source, "accepted": v.accepted,
-                      "route": v.extra.get("route"), "p_value": v.p_value, "effect_size": v.effect_size, "notes": v.notes}
+                      "validator": v.validator, "route": v.extra.get("route"), "p_value": v.p_value,
+                      "effect_size": v.effect_size, "notes": v.notes}
                      for v in verdicts],
         "accepted_diff": accepted[-1].patch_candidate.diff if accepted else None,
+        "accepted_patch": ({"bug_id": accepted[-1].patch_candidate.hypothesis_bug_id,
+                            "strategy": accepted[-1].patch_candidate.strategy.value,
+                            "source": accepted[-1].patch_candidate.source,
+                            "confidence": accepted[-1].patch_candidate.confidence} if accepted else None),
+        "pending_patch": bool(state.extra.get("pending_patch")),
+        "apply_blocked": state.extra.get("apply_blocked"),
         "llm": state.extra.get("llm"),
         "llm_notes": state.extra.get("llm_notes", []),
         "summary": state.extra.get("perception_summary"),

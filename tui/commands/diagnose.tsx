@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Box, Text, useApp, useInput } from 'ink';
 import z from 'zod';
-import { runPython, type SbaEvent } from '../utils/pythonBridge.js';
+import { resolveTarget, runPython, type SbaEvent } from '../utils/pythonBridge.js';
 import { MultiAgentStepper, type Step } from '../components/MultiAgentStepper.js';
 import { MetricMeter } from '../components/MetricMeter.js';
 
@@ -35,7 +35,8 @@ export default function Diagnose({
   onBack,
   isEmbedded = false,
 }: Props) {
-  const script = cmdArgs[0] ?? '';
+  const shown = cmdArgs[0] ?? ''; // what the user typed, for display
+  const script = resolveTarget(shown);
   const { exit } = useApp();
 
   const [steps, setSteps] = useState<Step[]>([
@@ -122,7 +123,7 @@ export default function Diagnose({
         <Text bold color="#B39DDB">
           ⬡ Diagnose
         </Text>
-        <Text color="#636E72">{script}</Text>
+        <Text color="#636E72">{shown}</Text>
       </Box>
 
       <MultiAgentStepper steps={steps} />

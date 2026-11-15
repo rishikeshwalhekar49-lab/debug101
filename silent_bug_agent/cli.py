@@ -4,14 +4,20 @@
     python -m silent_bug_agent monitor <script> [--max-steps N] [--json] [--events] [-- script args]
     python -m silent_bug_agent diagnose <script> [--no-llm] [--json] [--events] [-- script args]
     python -m silent_bug_agent fix <script> [--max-iter N] [--dry-run] [--no-llm] [--json] [--events] [-- script args]
+    python -m silent_bug_agent apply <script> [--events]
+    python -m silent_bug_agent wsp [script] [--checkpoint FILE] [--max-steps N] [--json] [--events] [-- script args]
     python -m silent_bug_agent doctor [--live] [--events]
     python -m silent_bug_agent ui
+
+`fix --dry-run` validates a patch and keeps it; `apply` then writes exactly that patch.
+`wsp` only reads weights. It never changes a script or a checkpoint.
 
 Heavy libraries are imported inside each command, so `scan` works without PyTorch.
 """
 
 import argparse
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -70,13 +76,23 @@ def build_parser() -> argparse.ArgumentParser:
     doctor_parser.add_argument("--live", action="store_true", help="Also send one test request to each model")
     doctor_parser.add_argument("--events", action="store_true", default=False, help="Emit NDJSON events for the Ink TUI")
 
-    wsp_parser = subparsers.add_parser("wsp", help="Simultaneous Code-Space and Weight-Space diagnosis & repair")
-    wsp_parser.add_argument("script", type=str, help="Path to training script")
-    wsp_parser.add_argument("--checkpoint", type=str, default=None, help="Path to model checkpoint (.pt/.pth/.safetensors)")
-    wsp_parser.add_argument("--max-iter", type=int, default=3, help="Max repair & validation iterations")
-    wsp_parser.add_argument("--dry-run", action="store_true", help="Show proposed changes without modifying files")
-    wsp_parser.add_argument("--yes", "-y", action="store_true", help="Non-interactive auto-approval of solutions")
+    apply_parser = subparsers.add_parser("apply", help="Write the patch that `fix --dry-run` validated for a script")
+    apply_parser.add_argument("script", type=str)
+    apply_parser.add_argument("--events", action="store_true", default=False, help="Emit NDJSON events for the Ink TUI")
+
+    wsp_parser = subparsers.add_parser("wsp", help="Inspect a model's weights for anomalies (read-only)")
+    wsp_parser.add_argument("script", type=str, nargs="?", default=None,
+                            help="Training script: it is run for a few steps in the sandbox and its weights are read")
+    wsp_parser.add_argument("--checkpoint", type=str, default=None,
+                            help="Inspect this saved state_dict instead (.pt/.pth/.bin/.ckpt/.safetensors)")
+    wsp_parser.add_argument("--max-steps", type=int, default=60, help="Optimizer steps to train before inspecting")
+    wsp_parser.add_argument("--timeout", type=float, default=180.0, help="Time limit for the training run, in seconds")
+    wsp_parser.add_argument("--json", action="store_true", default=False, help="Output the report as JSON")
     wsp_parser.add_argument("--events", action="store_true", default=False, help="Emit NDJSON events for the Ink TUI")
+    # Accepted so old commands still run. wsp no longer edits anything, so they have no effect.
+    wsp_parser.add_argument("--max-iter", type=int, default=None, help=argparse.SUPPRESS)
+    wsp_parser.add_argument("--dry-run", action="store_true", help=argparse.SUPPRESS)
+    wsp_parser.add_argument("--yes", "-y", action="store_true", help=argparse.SUPPRESS)
 
     subparsers.add_parser("ui", help="Launch the Pastel + Ink interactive TUI (requires Node.js)")
     return parser
@@ -105,8 +121,6 @@ def run_scan(path_str: str, semantic: bool = False, json_output: bool = False,
     emitter.phase("static_analysis", "done", findings=len(report.findings))
 
     if semantic:
-        import os
-
         emitter.phase("semantic_review", "start")
         router = ModelRouter()
         if model:
@@ -230,7 +244,7 @@ def run_diagnose(script: str, script_args: List[str], *, max_steps: int = 150, n
     return 1 if rows else 0
 
 
-def _print_run(info: Dict[str, Any], dry_run: bool) -> None:
+def _print_run(info: Dict[str, Any], dry_run: bool, script: str = "<script>") -> None:
     print(f"\nStatus: {info['status'].upper()}  ({info['outcome']})")
     if info.get("summary"):
         print(f"Perception: {info['summary']}")
@@ -243,6 +257,11 @@ def _print_run(info: Dict[str, Any], dry_run: bool) -> None:
         print("\nValidated patch:\n" + info["accepted_diff"])
         if info["patch_applied"]:
             print(f"Patch applied. Original saved as {info['backup']}")
+        elif info.get("apply_blocked"):
+            print(f"The file was not changed. {info['apply_blocked']}")
+        elif info.get("pending_patch"):
+            print("Dry run: the file was not changed. To write exactly this patch, run:\n"
+                  f"  python -m silent_bug_agent apply {script}")
         elif dry_run:
             print("Dry run: the file was not changed.")
     if info["reason"]:
@@ -264,8 +283,8 @@ def run_fix(script: str, script_args: List[str], *, max_iter: int = 3, max_round
         return 2
     from .agents.supervisor import PipelineConfig, SupervisorAgent, describe_state
 
-    config = PipelineConfig(max_iterations=max_iter, script_args=script_args, dry_run=dry_run, offline=no_llm,
-                            seeds=(42, 1337, 2024, 7, 99)[:max(3, min(5, seeds))])
+    config = PipelineConfig(max_iterations=max_iter, script_args=script_args, dry_run=dry_run, keep_pending=dry_run,
+                            offline=no_llm, seeds=(42, 1337, 2024, 7, 99)[:max(3, min(5, seeds))])
     try:
         supervisor = SupervisorAgent(config, emitter=emitter)
     except Exception as exc:
@@ -284,31 +303,16 @@ def run_fix(script: str, script_args: List[str], *, max_iter: int = 3, max_round
         raise
     runs = [describe_state(state) for state in states]
 
+    # The supervisor already streamed each hypothesis, candidate and verdict as it happened.
+    # Only the outcome is added here: the patch that passed, and whether the file was written.
     for info in runs:
-        for hyp in info.get("hypotheses", []):
-            emitter.hypothesis(
-                rank=info["hypotheses"].index(hyp) + 1,
-                bug_id=hyp["bug_id"],
-                confidence=hyp["confidence"],
-                description=hyp.get("explanation", ""),
-                diagnosed_by=hyp.get("diagnosed_by"),
-            )
-        for attempt in info.get("attempts", []):
-            emitter.verdict(
-                bug_id=attempt.get("bug_id", ""),
-                accepted=attempt.get("accepted", False),
-                validator=attempt.get("validator", ""),
-                p_value=attempt.get("p_value"),
-                effect_size=attempt.get("effect_size"),
-                notes=attempt.get("notes", ""),
-            )
-        if info.get("accepted_diff"):
-            emitter.patch(
-                bug_id=info.get("hypotheses", [{}])[0].get("bug_id", "") if info.get("hypotheses") else "",
-                strategy="direct_edit",
-                source="pipeline",
-                diff=info["accepted_diff"],
-                confidence=1.0,
+        accepted = info.get("accepted_patch")
+        if accepted and info.get("accepted_diff"):
+            emitter.accepted_patch(
+                bug_id=accepted["bug_id"], strategy=accepted["strategy"], source=accepted["source"],
+                diff=info["accepted_diff"], confidence=accepted["confidence"],
+                applied=info["patch_applied"], backup=info.get("backup"),
+                pending=info.get("pending_patch", False), blocked=info.get("apply_blocked"),
             )
 
     emitter.result({"runs": runs})
@@ -319,7 +323,7 @@ def run_fix(script: str, script_args: List[str], *, max_iter: int = 3, max_round
             print(json.dumps(runs, indent=2, default=str))
         else:
             for info in runs:
-                _print_run(info, dry_run)
+                _print_run(info, dry_run, script)
     return 1 if failed else 0
 
 
@@ -386,21 +390,66 @@ def run_doctor(live: bool = False, events: bool = False) -> int:
     return 0 if problems == 0 else 1
 
 
-def run_wsp(script: str, checkpoint: Optional[str] = None, *, max_iter: int = 3, dry_run: bool = False,
-            interactive: bool = True, events: bool = False) -> int:
-    """Run simultaneous Code-Space and Weight-Space debugging with interactive approval."""
+def run_apply(script: str, *, events: bool = False) -> int:
+    """Write the patch that `fix --dry-run` validated for this script. Nothing else is ever applied."""
     emitter = EventEmitter(enabled=events)
     target = _need_file(script)
     if target is None:
         emitter.error(f"Script '{script}' does not exist.")
         emitter.done(2)
         return 2
+    from .repair.pending import PendingPatchError, apply_pending
 
-    from .wsp.dual_supervisor import DualConfig, DualSupervisorAgent
+    try:
+        record = apply_pending(target)
+    except PendingPatchError as exc:
+        emitter.error(str(exc))
+        emitter.done(1)
+        print(f"Not applied: {exc}", file=sys.stderr)
+        return 1
+    emitter.applied(target=str(target), backup=record.get("backup"), bug_id=str(record.get("bug_id", "")))
+    emitter.done(0)
+    if not events:
+        print(f"Patch for {record.get('bug_id') or 'the validated bug'} applied to {target}.")
+        print(f"Original saved as {record.get('backup')}")
+    return 0
 
-    config = DualConfig(max_iterations=max_iter, interactive=interactive, dry_run=dry_run)
-    supervisor = DualSupervisorAgent(config, emitter=emitter)
-    return supervisor.run(str(target), checkpoint_path=checkpoint)
+
+def run_wsp(script: Optional[str], script_args: Optional[List[str]] = None, *, checkpoint: Optional[str] = None,
+            max_steps: int = 60, timeout: float = 180.0, json_output: bool = False, events: bool = False) -> int:
+    """Read-only weight inspection of a checkpoint, or of a script's weights after a short sandboxed run."""
+    emitter = EventEmitter(enabled=events)
+
+    def fail(message: str) -> int:
+        emitter.error(message)
+        emitter.done(2)
+        print(f"Error: {message}", file=sys.stderr)
+        return 2
+
+    if not script and not checkpoint:
+        return fail("give a training script, or --checkpoint FILE")
+    try:
+        from .wsp import WeightInspector, inspect_script
+    except ImportError as exc:
+        return fail(f"weight inspection needs PyTorch ({exc}); install it with: pip install -e \".[torch]\"")
+
+    emitter.phase("weight_inspection", "start")
+    if checkpoint:
+        if not Path(checkpoint).is_file():
+            return fail(f"checkpoint '{checkpoint}' does not exist.")
+        report = WeightInspector().inspect_checkpoint(checkpoint)
+    else:
+        target = Path(script).resolve()
+        if not target.is_file():
+            return fail(f"script '{script}' does not exist.")
+        report = inspect_script(target, max_steps=max_steps, timeout=timeout, script_args=script_args or [])
+    emitter.phase("weight_inspection", "done", findings=len(report.findings), inspected=report.inspected)
+    emitter.weight_report(report.to_dict())
+    exit_code = 2 if not report.inspected else (1 if report.has_issues else 0)
+    emitter.done(exit_code)
+    if not events:
+        print(json.dumps(report.to_dict(), indent=2) if json_output else report.format_text())
+    return exit_code
 
 
 def _launch_ui() -> int:
@@ -432,7 +481,9 @@ def _launch_ui() -> int:
             return 1
 
     try:
-        proc = subprocess.run([node, str(dist)] + sys.argv[2:], cwd=str(pkg_root))
+        # The working directory stays the user's, so a relative script path means what they typed.
+        # SBA_PYTHON tells the UI to run its commands with this same interpreter, venv or not.
+        proc = subprocess.run([node, str(dist)] + sys.argv[2:], env={**os.environ, "SBA_PYTHON": sys.executable})
         return proc.returncode
     except KeyboardInterrupt:
         return 0
@@ -463,9 +514,14 @@ def main(argv: Optional[List[str]] = None) -> int:
                        json_output=args.json, events=args.events)
     if args.command == "doctor":
         return run_doctor(live=args.live, events=args.events)
+    if args.command == "apply":
+        return run_apply(args.script, events=args.events)
     if args.command == "wsp":
-        return run_wsp(args.script, checkpoint=args.checkpoint, max_iter=args.max_iter,
-                       dry_run=args.dry_run, interactive=not args.yes, events=args.events)
+        if (args.max_iter is not None or args.dry_run or args.yes) and not args.events:
+            print("note: --max-iter, --dry-run and --yes no longer do anything: wsp only reads weights.",
+                  file=sys.stderr)
+        return run_wsp(args.script, script_args, checkpoint=args.checkpoint, max_steps=args.max_steps,
+                       timeout=args.timeout, json_output=args.json, events=args.events)
     if args.command == "ui":
         return _launch_ui()
     parser.print_help()
