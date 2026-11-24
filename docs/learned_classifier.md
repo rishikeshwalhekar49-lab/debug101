@@ -141,6 +141,19 @@ python examples/compare_models.py --data traces.jsonl --rules --json comparison.
 python examples/plot_comparison.py comparison.json model_comparison.png
 ```
 
+### As a leaderboard
+
+![Leaderboard: every model ranked on the same runs](images/leaderboard.png)
+
+The same comparison with every learned model trained 5 times (different fold splits and
+initialisations), so each accuracy is a mean ± standard deviation. The LLM rows give only
+OpenAI's published parameter counts; their accuracy has not been measured.
+
+```bash
+python examples/compare_models.py --data traces.jsonl --seeds 5 --reuse-rules comparison.json --json leaderboard.json
+python examples/plot_leaderboard.py leaderboard.json leaderboard.png
+```
+
 ## How the pipeline uses it, and why only as advice
 
 While the runtime monitor runs, the script is traced once more in parallel

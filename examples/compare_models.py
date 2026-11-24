@@ -67,10 +67,13 @@ def metrics(truth: Sequence[str], predicted: Sequence[str]) -> Dict[str, Any]:
 
 
 # ------------------------------------------------------- feature models
-def _ours(hidden: int) -> Callable[[], Any]:
+def _ours(hidden: int) -> Callable[..., Any]:
     class Ours:
+        def __init__(self, seed: int = 0) -> None:
+            self.seed = seed
+
         def fit(self, X: np.ndarray, y: List[str]) -> "Ours":
-            self.model = TraceClassifier.fit(X, y, hidden=hidden)
+            self.model = TraceClassifier.fit(X, y, hidden=hidden, seed=self.seed)
             return self
 
         def predict(self, X: np.ndarray) -> List[str]:
@@ -85,6 +88,9 @@ def _ours(hidden: int) -> Callable[[], Any]:
 
 
 class Majority:
+    def __init__(self, seed: int = 0) -> None:
+        pass
+
     def fit(self, X: np.ndarray, y: List[str]) -> "Majority":
         labels, counts = np.unique(y, return_counts=True)
         self.label = str(labels[int(np.argmax(counts))])
@@ -97,7 +103,7 @@ class Majority:
         return {"bytes": len(self.label), "parameters": 0}
 
 
-def _sklearn(name: str) -> Optional[Callable[[], Any]]:
+def _sklearn(name: str) -> Optional[Callable[..., Any]]:
     try:
         from sklearn.ensemble import HistGradientBoostingClassifier, RandomForestClassifier
         from sklearn.neighbors import KNeighborsClassifier
@@ -107,16 +113,20 @@ def _sklearn(name: str) -> Optional[Callable[[], Any]]:
     except ImportError:
         return None
     builders = {
-        "Random forest (300 trees)": lambda: RandomForestClassifier(n_estimators=300, random_state=0,
-                                                                     class_weight="balanced"),
-        "Gradient boosting": lambda: HistGradientBoostingClassifier(random_state=0, class_weight="balanced"),
-        "k-nearest neighbours (k=5)": lambda: make_pipeline(StandardScaler(), KNeighborsClassifier(5)),
-        "SVM (RBF kernel)": lambda: make_pipeline(StandardScaler(), SVC(class_weight="balanced", random_state=0)),
+        "Random forest (300 trees)": lambda seed: RandomForestClassifier(n_estimators=300, random_state=seed,
+                                                                         class_weight="balanced"),
+        "Gradient boosting": lambda seed: HistGradientBoostingClassifier(random_state=seed, class_weight="balanced"),
+        "k-nearest neighbours (k=5)": lambda seed: make_pipeline(StandardScaler(), KNeighborsClassifier(5)),
+        "SVM (RBF kernel)": lambda seed: make_pipeline(StandardScaler(),
+                                                       SVC(class_weight="balanced", random_state=seed)),
     }
 
     class Wrapped:
+        def __init__(self, seed: int = 0) -> None:
+            self.seed = seed
+
         def fit(self, X: np.ndarray, y: List[str]) -> "Wrapped":
-            self.model = builders[name]().fit(X, y)
+            self.model = builders[name](self.seed).fit(X, y)
             return self
 
         def predict(self, X: np.ndarray) -> List[str]:
@@ -128,21 +138,35 @@ def _sklearn(name: str) -> Optional[Callable[[], Any]]:
     return Wrapped
 
 
-def evaluate_feature_model(name: str, factory: Callable[[], Any], X: np.ndarray, y: List[str], groups: List[str],
-                           Xb: np.ndarray, yb: List[str]) -> Dict[str, Any]:
-    predicted: List[str] = [""] * len(y)
-    for test in _folds(groups, 5, 0):
-        model = factory().fit(X[~test], [label for label, t in zip(y, test) if not t])
-        for index, label in zip(np.flatnonzero(test), model.predict(X[test])):
-            predicted[index] = label
-    final = factory().fit(X, y)
+def _spread(values: Sequence[float]) -> Dict[str, float]:
+    return {"mean": float(np.mean(values)), "std": float(np.std(values, ddof=1)) if len(values) > 1 else 0.0,
+            "runs": len(values)}
+
+
+def evaluate_feature_model(name: str, factory: Callable[..., Any], X: np.ndarray, y: List[str], groups: List[str],
+                           Xb: np.ndarray, yb: List[str], seeds: Sequence[int] = (0,)) -> Dict[str, Any]:
+    """Cross-validate and test once per seed: the seed sets which templates share a fold and the model's own
+    randomness. The first seed's run is kept in full; the others add the spread."""
+    runs = []
+    for seed in seeds:
+        predicted: List[str] = [""] * len(y)
+        for test in _folds(groups, 5, seed):
+            model = factory(seed).fit(X[~test], [label for label, t in zip(y, test) if not t])
+            for index, label in zip(np.flatnonzero(test), model.predict(X[test])):
+                predicted[index] = label
+        final = factory(seed).fit(X, y)
+        runs.append((metrics(y, predicted), metrics(yb, final.predict(Xb)), final))
+    templates, benchmarks, final = runs[0]
     started = time.perf_counter()
     for row in Xb:
         final.predict(row[None, :])
     per_prediction = (time.perf_counter() - started) / max(1, len(Xb))
-    return {"model": name, "kind": "trained on trace features", "templates": metrics(y, predicted),
-            "benchmarks": metrics(yb, final.predict(Xb)), "benchmark_predictions": final.predict(Xb),
-            "seconds_per_prediction": per_prediction, **final.size()}
+    return {"model": name, "kind": "trained on trace features", "templates": templates, "benchmarks": benchmarks,
+            "benchmark_predictions": final.predict(Xb), "seconds_per_prediction": per_prediction,
+            "over_seeds": {"templates_accuracy": _spread([r[0]["accuracy"] for r in runs]),
+                           "benchmarks_accuracy": _spread([r[1]["accuracy"] for r in runs]),
+                           "false_alarms_on_healthy": _spread([r[1]["false_alarms_on_healthy"] for r in runs])},
+            **final.size()}
 
 
 # ------------------------------------------------------------- the rules
@@ -238,6 +262,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--llm", action="store_true", help="also ask gpt-oss-120b and gpt-oss-20b (needs a key)")
     parser.add_argument("--llm-limit", type=int, default=150, help="template runs to send to each LLM")
     parser.add_argument("--workers", type=int, default=6)
+    parser.add_argument("--seeds", type=int, default=1, help="repeat every learned model over this many seeds")
+    parser.add_argument("--reuse-rules", default=None,
+                        help="take the hand-written rules' result from an earlier --json file instead of rerunning")
     parser.add_argument("--json", default=None)
     options = parser.parse_args(argv)
 
@@ -253,8 +280,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     y, yb = [rows[i]["label"] for i in train], [rows[i]["label"] for i in bench]
     groups = [rows[i]["group"] for i in train]
 
-    factories: Dict[str, Optional[Callable[[], Any]]] = {
-        "Majority class": lambda: Majority(),
+    factories: Dict[str, Optional[Callable[..., Any]]] = {
+        "Majority class": Majority,
         "Softmax regression (ours, no hidden layer)": _ours(0),
         "Trace classifier (ours, as shipped)": _ours(32),
     }
@@ -265,9 +292,12 @@ def main(argv: Optional[List[str]] = None) -> int:
         if factory is None:
             print(f"skipped {name}: scikit-learn is not installed")
             continue
-        results.append(evaluate_feature_model(name, factory, X, y, groups, Xb, yb))
+        results.append(evaluate_feature_model(name, factory, X, y, groups, Xb, yb, seeds=range(options.seeds)))
         print(f"{name}: done")
-    if options.rules:
+    if options.reuse_rules:
+        earlier = json.loads(Path(options.reuse_rules).read_text(encoding="utf-8"))["results"]
+        results += [r for r in earlier if r["model"].startswith("Hand-written rules")]
+    elif options.rules:
         results.append(evaluate_rules([jobs[i]["code"] for i in train], y, [jobs[i]["code"] for i in bench], yb,
                                       options.workers))
         print("hand-written rules: done")
