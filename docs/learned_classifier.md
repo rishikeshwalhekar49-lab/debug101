@@ -98,6 +98,49 @@ A wrong finding cannot change a healthy file by itself: a patch for a bug that o
 classifier reported can pass only on statistics (the "bug removed and not worse" route
 is closed to it), and Gate 2 accepts a patch that does nothing at most 5% of the time.
 
+## Compared with other models
+
+![Accuracy by model, and accuracy against size](images/model_comparison.png)
+
+`examples/compare_models.py` asks every model the same question for the same runs, and
+`examples/plot_comparison.py` draws the chart above (data: `images/model_comparison.json`).
+The learned models all get the same 24 features; the hand-written rules are the project's
+own detectors, run offline exactly as `diagnose --no-llm` runs them.
+
+| Model | Generated scripts (n = 701) | Hand-written (n = 26) | Healthy flagged (of 17) | Size | Per prediction |
+|---|---|---|---|---|---|
+| **Trace classifier (shipped)** | **93.0%** | 80.8% | 17.6% | 11.7 KB | 14 µs |
+| Same, no hidden layer | 91.3% | 84.6% | 5.9% | 3.5 KB | 12 µs |
+| Random forest (300 trees) | 94.9% | 80.8% | 23.5% | 6.0 MB | 6.3 ms |
+| Gradient boosting | 94.3% | 38.5% | 76.5% | 2.0 MB | 17.8 ms |
+| SVM (RBF) | 85.6% | 88.5% | 5.9% | 119 KB | 139 µs |
+| k-nearest neighbours (k = 5) | 85.0% | 88.5% | 5.9% | 140 KB | 319 µs |
+| Hand-written rules | 60.1% | 73.1% | 35.3% | no model file | 7 s, including a 150-step run |
+| Always the commonest label | 11.4% | 65.4% | 0% | none | none |
+
+What it says:
+
+- On generated scripts the shipped model is within 2 points of the best (the random
+  forest), at 1/500 of its size and 1/450 of its time per prediction.
+- On hand-written scripts the simpler models generalise better (SVM and k-NN 88.5%, the
+  no-hidden-layer version 84.6%). The test is small: 21 of 26 has a 95% interval of about
+  62% to 92%, so a few points either way is noise.
+- The rules miss whole bug types the operators plant (frozen layers 5%, unnormalised
+  inputs 7%, shuffled labels 0%: there is no rule for it), but on the hand-written
+  benchmarks they name 8 of the 9 bugs to the classifier's 7, at twice the false alarms.
+- The times compare the models alone. The classifier also needs one 60-step traced run of
+  the script (about 4 s), done in parallel with the runtime monitor.
+- LLMs were not compared: no API key was set on the test machine. With a key in `.env`,
+  `compare_models.py --llm` asks gpt-oss-120b and gpt-oss-20b the same question, once
+  given the trace statistics and once given the source code.
+
+```bash
+python -m silent_bug_agent.mutation.dataset --templates 80 --out traces.jsonl
+pip install scikit-learn matplotlib            # for the baselines and the chart only
+python examples/compare_models.py --data traces.jsonl --rules --json comparison.json
+python examples/plot_comparison.py comparison.json model_comparison.png
+```
+
 ## How the pipeline uses it, and why only as advice
 
 While the runtime monitor runs, the script is traced once more in parallel
