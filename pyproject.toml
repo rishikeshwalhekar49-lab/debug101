@@ -48,4 +48,4 @@ where = ["."]
 include = ["silent_bug_agent*"]
 
 [tool.setuptools.package-data]
-silent_bug_agent = ["taxonomy/*.yaml"]
+silent_bug_agent = ["taxonomy/*.yaml", "learned/weights.json"]

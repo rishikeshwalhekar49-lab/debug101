@@ -11,9 +11,10 @@ const COMMANDS = [
   { key: '1', label: 'fix', name: 'FIX', description: 'Find a bug, write a patch, test it, then ask before changing your file' },
   { key: '2', label: 'diagnose', name: 'DIAGNOSE', description: 'Rank the likely root causes of what the detectors found' },
   { key: '3', label: 'scan', name: 'SCAN', description: 'Static rules over the code, without running it' },
-  { key: '4', label: 'monitor', name: 'MONITOR', description: 'Run the script under PyTorch hooks (loss, gradients, activations)' },
-  { key: '5', label: 'wsp', name: 'WEIGHTS', description: 'Read-only check of the trained weights (NaN, dead biases, collapsed rank)' },
-  { key: '6', label: 'doctor', name: 'DOCTOR', description: 'Check the installation, keys and models' },
+  { key: '4', label: 'snippet', name: 'SNIPPET', description: 'Check a code fragment saved in a file. Static only: nothing is run or validated' },
+  { key: '5', label: 'monitor', name: 'MONITOR', description: 'Run the script under PyTorch hooks (loss, gradients, activations)' },
+  { key: '6', label: 'wsp', name: 'WEIGHTS', description: 'Read-only check of the trained weights (NaN, dead biases, collapsed rank)' },
+  { key: '7', label: 'doctor', name: 'DOCTOR', description: 'Check the installation, keys and models' },
 ];
 
 // Bundled examples are never edited: for them, "Apply the fix" writes a fixed copy to fixed_examples/.
@@ -24,6 +25,7 @@ const SAMPLE_SCRIPTS = [
   { path: 'examples/sample_scripts/benchmark_04_softmax_before_crossentropy.py', desc: 'Benchmark 04: softmax before CrossEntropyLoss' },
   { path: 'examples/sample_scripts/benchmark_06_dead_relu.py', desc: 'Benchmark 06: dead ReLU units from a bias initialisation' },
   { path: 'examples/sample_scripts/clean_mnist.py', desc: 'A healthy script, for comparison' },
+  { path: 'examples/snippets/training_step.txt', desc: 'A pasted fragment, not a full script (for SNIPPET)' },
 ];
 
 type ViewMode = 'menu' | 'target_select' | 'custom_input' | 'executing';
@@ -87,10 +89,10 @@ export default function Index() {
     if (activeCommand === 'doctor') {
       return <Doctor options={{ live: false }} onBack={() => setMode('menu')} isEmbedded={true} />;
     }
-    if (activeCommand === 'scan') {
+    if (activeCommand === 'scan' || activeCommand === 'snippet') {
       return (
         <Scan
-          options={{ semantic: false }}
+          options={{ semantic: false, snippet: activeCommand === 'snippet' }}
           args={[targetScript]}
           onBack={() => setMode('menu')}
           isEmbedded={true}

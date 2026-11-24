@@ -2,6 +2,7 @@
 
     python -m silent_bug_agent scan <path> [--semantic] [--json] [--events]
     python -m silent_bug_agent monitor <script> [--max-steps N] [--json] [--events] [-- script args]
+    python -m silent_bug_agent snippet [file | -] [--semantic] [--json]   (static only: nothing is run)
     python -m silent_bug_agent diagnose <script> [--no-llm] [--json] [--events] [-- script args]
     python -m silent_bug_agent fix <script> [--max-iter N] [--dry-run] [--another] [--no-llm] [--json] [--events]
                                             [-- script args]
@@ -49,6 +50,14 @@ def build_parser() -> argparse.ArgumentParser:
     scan_parser.add_argument("--model", type=str, default=None, help="Model override, as provider/model")
     scan_parser.add_argument("--events", action="store_true", default=False, help="Emit NDJSON events for the Ink TUI")
 
+    snippet_parser = subparsers.add_parser("snippet", help="Check a code snippet without running it (static only)")
+    snippet_parser.add_argument("path", nargs="?", default="-",
+                                help="A file holding the snippet, or - (the default) to read it from standard input")
+    snippet_parser.add_argument("--semantic", action="store_true", default=False,
+                                help="Add the LLM review (needs GROQ_API_KEY or CEREBRAS_API_KEY)")
+    snippet_parser.add_argument("--json", action="store_true", default=False, help="Output the report as JSON")
+    snippet_parser.add_argument("--events", action="store_true", default=False, help="Emit NDJSON events for the Ink TUI")
+
     monitor_parser = subparsers.add_parser("monitor", help="Run a training script under the runtime hooks")
     monitor_parser.add_argument("script", type=str)
     monitor_parser.add_argument("--max-steps", type=int, default=300, help="Optimizer steps to watch (0 = no limit)")
@@ -61,6 +70,8 @@ def build_parser() -> argparse.ArgumentParser:
     diagnose_parser.add_argument("script", type=str)
     diagnose_parser.add_argument("--max-steps", type=int, default=150)
     diagnose_parser.add_argument("--no-llm", action="store_true", help="Use rules and statistics only")
+    diagnose_parser.add_argument("--learned", choices=["off", "advisory", "active"], default="advisory",
+                                 help="Trace classifier: show its guess (advisory), let it rank causes too (active), or skip it")
     diagnose_parser.add_argument("--json", action="store_true")
     diagnose_parser.add_argument("--events", action="store_true", default=False, help="Emit NDJSON events for the Ink TUI")
 
@@ -73,6 +84,8 @@ def build_parser() -> argparse.ArgumentParser:
                             help="Turn down the patch validated last time and look for a different fix")
     fix_parser.add_argument("--no-llm", action="store_true", help="Use rules and statistics only")
     fix_parser.add_argument("--seeds", type=int, default=5, help="Seeds for the statistical gate (3 to 5)")
+    fix_parser.add_argument("--learned", choices=["off", "advisory", "active"], default="advisory",
+                            help="Trace classifier: show its guess (advisory), let it rank causes too (active), or skip it")
     fix_parser.add_argument("--json", action="store_true")
     fix_parser.add_argument("--events", action="store_true", default=False, help="Emit NDJSON events for the Ink TUI")
 
@@ -153,6 +166,43 @@ def run_scan(path_str: str, semantic: bool = False, json_output: bool = False,
     return 1 if has_issues else 0
 
 
+def run_snippet(path_str: str = "-", semantic: bool = False, json_output: bool = False, events: bool = False) -> int:
+    """Static rules (and the LLM review, if asked) over a snippet. Nothing is run, so nothing is validated."""
+    from .static.snippet import analyze_snippet
+
+    emitter = EventEmitter(enabled=events)
+    try:
+        text = sys.stdin.read() if path_str == "-" else Path(path_str).read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as exc:
+        emitter.error(f"Could not read the snippet: {exc}")
+        emitter.done(2)
+        print(f"Error: could not read the snippet: {exc}", file=sys.stderr)
+        return 2
+    client = None
+    if semantic:
+        client = ModelRouter().task("semantic_review")
+    emitter.phase("static_analysis", "start")
+    report = analyze_snippet(text, semantic_client=client)
+    if semantic and client is None:
+        report.diagnostics.append("LLM review skipped: set GROQ_API_KEY or CEREBRAS_API_KEY in .env.")
+    emitter.phase("static_analysis", "done", findings=len(report.findings), snippet=True)
+    emitter.findings_batch([f.to_dict() for f in report.sorted_findings()], diagnostics=report.diagnostics)
+    emitter.result(report.to_dict())
+    has_issues = any(f.severity in (Severity.WARNING, Severity.CRITICAL) for f in report.findings)
+    emitter.done(1 if has_issues else 0)
+    if not events:
+        if json_output:
+            print(report.to_json(indent=2))
+        else:
+            if report.findings:
+                print(report.format_text())  # includes the notes
+            else:
+                print("No bugs found in the snippet.")
+                for note in report.diagnostics:
+                    print(f"note: {note}")
+    return 1 if has_issues else 0
+
+
 def _need_file(path_str: str) -> Optional[Path]:
     target = Path(path_str).resolve()
     if not target.is_file():
@@ -199,7 +249,7 @@ def run_monitor(script: str, script_args: List[str], *, max_steps: int = 300, ma
 
 
 def run_diagnose(script: str, script_args: List[str], *, max_steps: int = 150, no_llm: bool = False,
-                 json_output: bool = False, events: bool = False) -> int:
+                 json_output: bool = False, events: bool = False, learned_mode: str = "advisory") -> int:
     emitter = EventEmitter(enabled=events)
     target = _need_file(script)
     if target is None:
@@ -217,7 +267,23 @@ def run_diagnose(script: str, script_args: List[str], *, max_steps: int = 150, n
     if client is not None:
         report = merge_reports(report, SemanticAnalyzer(client).analyze_file(target))
     state = AgentState(target_file=str(target), detection_report=report, extra={"script_args": script_args})
-    state = RuntimeMonitorAgent(MonitorConfig(max_steps=max_steps, cwd=str(target.parent)))(state)
+    from concurrent.futures import ThreadPoolExecutor
+
+    from .learned.prior import finding_from, predict_script
+
+    with ThreadPoolExecutor(1) as pool:  # the classifier's traced run goes alongside the monitor's
+        learned = pool.submit(predict_script, target, script_args=script_args) if learned_mode != "off" else None
+        state = RuntimeMonitorAgent(MonitorConfig(max_steps=max_steps, cwd=str(target.parent)))(state)
+        try:
+            prediction = learned.result() if learned is not None else None
+        except Exception:  # noqa: BLE001 - only a hint
+            prediction = None
+    if prediction:
+        state.extra["learned"] = dict(prediction, mode=learned_mode)
+        if learned_mode == "active":
+            extra = finding_from(prediction, str(target), [f.bug_id for f in state.detection_report.findings])
+            if extra is not None:
+                state.detection_report.findings.append(extra)
     emitter.phase("perception", "done", findings=len(state.detection_report.findings))
 
     emitter.phase("diagnosis", "start")
@@ -231,13 +297,17 @@ def run_diagnose(script: str, script_args: List[str], *, max_steps: int = 150, n
             rank=row["rank"], bug_id=row["bug_id"], confidence=row["confidence"],
             description=row["explanation"], diagnosed_by=row["diagnosed_by"],
         )
-    emitter.result({"hypotheses": rows, "llm": router.summary()})
+    learned_info = state.extra.get("learned")
+    emitter.result({"hypotheses": rows, "llm": router.summary(), "learned": learned_info})
     emitter.done(1 if rows else 0)
     if not events:
         if json_output:
-            print(json.dumps({"hypotheses": rows, "llm": router.summary()}, indent=2))
+            print(json.dumps({"hypotheses": rows, "llm": router.summary(), "learned": learned_info}, indent=2))
         else:
             print(f"LLM: {router.describe()}")
+            if learned_info:
+                guesses = ", ".join(f"{bug} {p:.2f}" for bug, p in list(learned_info["probabilities"].items())[:3])
+                print(f"Trace classifier (a trained model; a hint, not proof): {guesses}")
             for row in rows:
                 print(f"{row['rank']}. {row['bug_id']}  (confidence {row['confidence']:.2f}, {row['diagnosed_by']})")
                 print(f"   {row['explanation']}")
@@ -281,11 +351,20 @@ def _print_run(info: Dict[str, Any], dry_run: bool, script: str = "<script>") ->
     llm = info.get("llm") or {}
     print(f"Models used: {', '.join(llm.get('models_used', [])) or 'none (offline rules and statistics)'}"
           f"  |  LLM calls: {llm.get('calls', 0)}, failed: {llm.get('failed_calls', 0)}, tokens: {llm.get('tokens', 0)}")
+    learned = info.get("learned")
+    if learned:
+        guesses = ", ".join(f"{bug} {p:.2f}" for bug, p in list(learned["probabilities"].items())[:3])
+        print(f"Trace classifier (a trained model; a hint, not proof): {guesses}")
+    from .agents.supervisor import time_breakdown
+
+    line = time_breakdown(info.get("timings") or {})
+    if line:
+        print(line)
 
 
 def run_fix(script: str, script_args: List[str], *, max_iter: int = 3, max_rounds: int = 3, dry_run: bool = False,
             no_llm: bool = False, seeds: int = 5, json_output: bool = False, events: bool = False,
-            another: bool = False) -> int:
+            another: bool = False, learned_mode: str = "advisory") -> int:
     emitter = EventEmitter(enabled=events)
     target = _need_file(script)
     if target is None:
@@ -312,7 +391,7 @@ def run_fix(script: str, script_args: List[str], *, max_iter: int = 3, max_round
 
     config = PipelineConfig(max_iterations=max_iter, script_args=script_args, dry_run=dry_run, keep_pending=dry_run,
                             offline=no_llm, seeds=(42, 1337, 2024, 7, 99)[:max(3, min(5, seeds))],
-                            rejected_patches=declined)
+                            rejected_patches=declined, learned=learned_mode)
     try:
         supervisor = SupervisorAgent(config, emitter=emitter)
     except Exception as exc:
@@ -549,16 +628,18 @@ def main(argv: Optional[List[str]] = None) -> int:
     if args.command == "scan":
         return run_scan(path_str=args.path, semantic=args.semantic, json_output=args.json,
                         model=args.model, events=args.events)
+    if args.command == "snippet":
+        return run_snippet(args.path, semantic=args.semantic, json_output=args.json, events=args.events)
     if args.command == "monitor":
         return run_monitor(args.script, script_args, max_steps=args.max_steps, max_seconds=args.max_seconds,
                            stop_on_critical=args.stop_on_critical, json_output=args.json, events=args.events)
     if args.command == "diagnose":
         return run_diagnose(args.script, script_args, max_steps=args.max_steps, no_llm=args.no_llm,
-                            json_output=args.json, events=args.events)
+                            json_output=args.json, events=args.events, learned_mode=args.learned)
     if args.command == "fix":
         return run_fix(args.script, script_args, max_iter=args.max_iter, max_rounds=args.max_rounds,
                        dry_run=args.dry_run, no_llm=args.no_llm, seeds=args.seeds,
-                       json_output=args.json, events=args.events, another=args.another)
+                       json_output=args.json, events=args.events, another=args.another, learned_mode=args.learned)
     if args.command == "doctor":
         return run_doctor(live=args.live, events=args.events)
     if args.command == "apply":

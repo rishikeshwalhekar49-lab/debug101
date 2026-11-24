@@ -1,0 +1,9 @@
+```python
+    criterion = nn.CrossEntropyLoss()
+    for xb, yb in train_loader:
+        logits = model(xb)
+        probs = torch.softmax(logits, dim=1)
+        loss = criterion(probs, yb)
+        loss.backward()
+        optimizer.step()
+```

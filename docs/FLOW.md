@@ -10,10 +10,11 @@ The function and file names below are the real ones, checked against the code on
    - `static/analyzer.py` → `StaticAnalyzer.analyze_file()`: 10 AST rules, no execution.
    - `semantic/analyzer.py` → `SemanticAnalyzer.analyze_file()`: LLM review of the source, only when a key is set.
    - `agents/runtime_monitor_agent.py` → `RuntimeMonitorAgent`: runs the script in a subprocess for a step budget with `runtime/instrument.py` (`AutoInstrumenter`) and `runtime/hooks.py` (`RuntimeHooks`) attached, and turns invariant violations into findings.
+   - At the same time as the monitor: `learned/prior.py` → `predict_script()` runs the script once more under `script_runner --trace` and classifies the trace with the shipped `learned/weights.json` (`learned/model.py`). A guess with p ≥ 0.8 of a bug no detector reported becomes a runtime finding (`rule="trace_classifier"`); the probabilities are kept in `state.extra["learned"]`.
    - `_consolidate()`: an optional LLM summary that marks findings that are side effects of others.
    - If the script itself raises, the run stops here with outcome `script_error`.
 4. **Diagnosis** (`_diagnosis`)
-   - `agents/diagnosis_agent.py` → `DiagnosisAgent`: `diagnosis/bridge.py` (`engine_inputs`, `hypotheses_from_report`) feeds the findings to `diagnosis/inference/causal_engine.py` (`CausalEngine`), which ranks causes above their symptoms. With a key, an LLM reviews the ranking.
+   - `agents/diagnosis_agent.py` → `DiagnosisAgent`: `diagnosis/bridge.py` (`engine_inputs`, `hypotheses_from_report`) feeds the findings to `diagnosis/inference/causal_engine.py` (`CausalEngine`), which ranks causes above their symptoms. Offline, the trace classifier's probabilities then nudge the ranking (`learned/prior.py` → `apply_prior()`, by at most 0.3). With a key, an LLM reviews the ranking and is given the classifier's probabilities as one more piece of evidence.
 5. **Repair** (`_repair`)
    - `repair/loop.py` → `AutonomousRepairLoop.run()` → `agents/fix_synthesizer_agent.py` → `FixSynthesizerAgent`.
    - `learning/bandit.py` → `ContextualBandit.select_strategy()` picks a repair strategy; `learning/experience_store.py` → `ExperienceStore.recall()` supplies similar accepted repairs as examples.
@@ -21,7 +22,7 @@ The function and file names below are the real ones, checked against the code on
    - `repair/patch_utils.py` → `patch_guard()` rejects unsafe or oversized patches before anything is run.
 6. **Validation** (`_validation`)
    - Gate 1: `validation/overfit_agent.py` → `OverfitOracleAgent`: the patched script must be able to overfit one batch.
-   - Gate 2: `validation/multiseedagent.py` → `MultiseedAgent.verify_patch()`: baseline and patched runs on 3 to 5 seeds in subprocesses (`validation/sandbox.py`, `validation/script_runner.py`), compared with a paired t-test, KS test, Cohen's d and a confidence interval. Skipped if Gate 1 rejected. (`multiseed_agent.py` is only an alias that re-exports this module.)
+   - Gate 2: `validation/multiseedagent.py` → `MultiseedAgent.verify_patch()`: baseline and patched runs on 3 to 5 seeds in subprocesses (`validation/sandbox.py`, `validation/script_runner.py`), compared with a paired t-test, KS test, Cohen's d and a confidence interval. Skipped if Gate 1 rejected. The runs go in parallel (about half the CPU cores; one at a time for a script that writes files or downloads data), baseline runs are reused for every candidate, and with 5 seeds the test looks twice: after 3 seeds it stops if p < 0.01 (accept) or if the patch does not lower the loss on average (reject), otherwise all 5 run and the final level is p < 0.04, so the overall false-accept rate stays at or below 0.05. The bug check (is the targeted bug gone from the patched code?) runs at the same time as Gate 2. (`multiseed_agent.py` is only an alias that re-exports this module.)
    - `_bug_gone()`: the detectors are run again on the patched code.
    - `validation/analyzer.py` → `ValidationAnalyzerAgent.analyze()`: accepts on statistics, or when the bug is gone and results are not worse (warning-level evidence or above). An LLM may veto an acceptance; it can never overturn a rejection.
 7. **Feedback or memory**

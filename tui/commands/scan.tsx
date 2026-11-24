@@ -3,10 +3,11 @@ import { Box, Text, useApp, useInput } from 'ink';
 import Spinner from 'ink-spinner';
 import z from 'zod';
 import { resolveTarget, runPython, type FindingData, type SbaEvent, stopRunning } from '../utils/pythonBridge.js';
-import { SeverityBadge } from '../components/Badge.js';
+import { Badge, SeverityBadge } from '../components/Badge.js';
 
 export const options = z.object({
   semantic: z.boolean().default(false).describe('Enable LLM semantic review'),
+  snippet: z.boolean().default(false).describe('The file holds a code snippet: parse it leniently, run nothing'),
 });
 
 export const args = z.tuple([
@@ -22,7 +23,7 @@ type Props = {
 
 type Phase = 'idle' | 'static_analysis' | 'semantic_review' | 'done' | 'error';
 
-export default function Scan({ options: opts = { semantic: false }, args: cmdArgs = [''], onBack, isEmbedded = false }: Props) {
+export default function Scan({ options: opts = { semantic: false, snippet: false }, args: cmdArgs = [''], onBack, isEmbedded = false }: Props) {
   const shown = cmdArgs[0] ?? ''; // what the user typed, for display
   const target = resolveTarget(shown);
   const { exit } = useApp();
@@ -55,7 +56,7 @@ export default function Scan({ options: opts = { semantic: false }, args: cmdArg
       return;
     }
 
-    const pyArgs = ['scan', target];
+    const pyArgs = [opts.snippet ? 'snippet' : 'scan', target];
     if (opts.semantic) pyArgs.push('--semantic');
 
     (async () => {
@@ -102,9 +103,10 @@ export default function Scan({ options: opts = { semantic: false }, args: cmdArg
     <Box flexDirection="column" padding={1} gap={1}>
       <Box gap={2}>
         <Text bold color="#87CEEB">
-          ⬡ Scan
+          {opts.snippet ? '⬡ Snippet check' : '⬡ Scan'}
         </Text>
         <Text color="#636E72">{shown}</Text>
+        {opts.snippet && <Badge label="NOT RUN" variant="muted" />}
       </Box>
 
       {phase !== 'done' && (

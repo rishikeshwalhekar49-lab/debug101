@@ -265,6 +265,7 @@ class SubprocessSandbox:
         cwd: Optional[str] = None,
         as_file: Optional[str] = None,
         save_weights: Optional[str] = None,
+        trace: bool = False,
     ) -> ExecutionResult:
         """Run any training code under `script_runner`, which needs no help from the code.
 
@@ -282,6 +283,8 @@ class SubprocessSandbox:
                 cmd += ["--as-file", str(as_file)]
             if save_weights:
                 cmd += ["--save-weights", str(save_weights)]
+            if trace:
+                cmd += ["--trace"]
             if script_args:
                 cmd += ["--", *script_args]
             effective_cwd = cwd or self.config.cwd or (str(Path(as_file).parent) if as_file else str(temp_dir))

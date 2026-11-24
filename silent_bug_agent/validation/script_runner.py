@@ -9,7 +9,9 @@ It works on any script, because nothing in the script has to cooperate:
 * losses are read from `backward()` and steps from a global optimizer hook;
 * `--max-steps` stops training cleanly, which keeps CPU-only runs short;
 * `--save-weights` writes the trained models' tensors to a file when the run ends,
-  so the weights can be inspected without importing the script anywhere else.
+  so the weights can be inspected without importing the script anywhere else;
+* `--trace` also records the training-trace statistics the learned bug classifier
+  reads (`silent_bug_agent/learned/trace.py`).
 
 In `overfit` mode each step sees the same batch: a DataLoader repeats its first
 batch, and for data drawn inside the loop the random state is rewound after each
@@ -30,9 +32,15 @@ MAX_SAVED_VALUES = 50_000_000  # about 200 MB of float32; larger models are not 
 
 
 class Recorder:
-    def __init__(self, seed: int, mode: str, max_steps: Optional[int], keep_models: bool = False) -> None:
+    def __init__(self, seed: int, mode: str, max_steps: Optional[int], keep_models: bool = False,
+                 trace: bool = False) -> None:
         self.seed, self.mode, self.max_steps = seed, mode, max_steps
-        self.keep_models = keep_models
+        self.keep_models = keep_models or trace
+        self.tracer: Any = None
+        if trace:
+            from ..learned.trace import Tracer
+
+            self.tracer = Tracer()
         self.models: Dict[int, Any] = {}  # id(model) -> model an optimizer trained, kept alive until the report
         self._optimizers_seen: set = set()
         self.losses: List[float] = []
@@ -68,6 +76,9 @@ class Recorder:
         self._undo += [h.remove for h in handles]
         if self.mode == "overfit":
             self._repeat_first_batch(torch)
+        if self.tracer is not None:
+            self.tracer.install()
+            self._undo.append(self.tracer.uninstall)
 
     def _repeat_first_batch(self, torch: Any) -> None:
         original_iter = torch.utils.data.DataLoader.__iter__
@@ -122,8 +133,12 @@ class Recorder:
                 grad = parameter.grad
                 seen = grad is not None and bool((grad._values() if grad.is_sparse else grad).abs().sum() > 0)
                 self.params[id(parameter)] = self.params.get(id(parameter), False) or seen
+        if self.tracer is not None:
+            self.tracer.before_step(optimizer, self.models)
 
     def _after_step(self, optimizer: Any, args: Any, kwargs: Any) -> None:
+        if self.tracer is not None:
+            self.tracer.after_step(optimizer)
         self.steps += 1
         if self.mode == "overfit":
             self._rewind()
@@ -178,10 +193,13 @@ class Recorder:
         finite = [v for v in values if math.isfinite(v)]
         head = sum(finite[:3]) / max(1, len(finite[:3])) if finite else None
         tail = sum(finite[-3:]) / max(1, len(finite[-3:])) if finite else None
-        return {"steps": self.steps, "losses": self.losses, "nonfinite_losses": len(values) - len(finite),
-                "initial_loss": head, "final_loss": tail,
-                "loss_ratio": (tail / head) if finite and head else None,
-                "params_trainable": len(self.params), "params_with_gradient": sum(self.params.values())}
+        report = {"steps": self.steps, "losses": self.losses, "nonfinite_losses": len(values) - len(finite),
+                  "initial_loss": head, "final_loss": tail,
+                  "loss_ratio": (tail / head) if finite and head else None,
+                  "params_trainable": len(self.params), "params_with_gradient": sum(self.params.values())}
+        if self.tracer is not None:
+            report["trace"] = self.tracer.report()
+        return report
 
 
 def seed_everything(seed: int) -> None:
@@ -208,12 +226,14 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--result", required=True)
     parser.add_argument("--as-file", default=None, help="path the script should believe it was loaded from")
     parser.add_argument("--save-weights", default=None, help="write the trained models' tensors to this file")
+    parser.add_argument("--trace", action="store_true", help="also record the statistics the bug classifier reads")
     options = parser.parse_args(argv)
 
     from ..runtime.instrument import exec_script
 
     seed_everything(options.seed)
-    recorder = Recorder(options.seed, options.mode, options.max_steps, keep_models=bool(options.save_weights))
+    recorder = Recorder(options.seed, options.mode, options.max_steps, keep_models=bool(options.save_weights),
+                        trace=options.trace)
     recorder.install()
     try:
         outcome = exec_script(options.script, script_args, display_path=options.as_file)

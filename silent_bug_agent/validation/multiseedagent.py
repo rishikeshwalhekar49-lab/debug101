@@ -14,6 +14,7 @@ import difflib
 import math
 import os
 import re
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
@@ -311,6 +312,20 @@ def apply_patch_string(original: str, patch_candidate: PatchCandidate | Any) -> 
 # MultiseedAgent Class
 # ---------------------------------------------------------------------------
 
+# Code that writes files (or downloads a dataset): parallel runs of it in one folder would overwrite
+# each other's files, so it runs one seed at a time.
+_WRITES_FILES = re.compile(
+    r"torch\.save\(|\.save\(|\.to_csv\(|savefig\(|\.write_(?:text|bytes)\(|pickle\.dump\(|json\.dump\(|"
+    r"\bopen\([^)]*['\"][wax]b?\+?['\"]|SummaryWriter\(|np\.save|download\s*=\s*True|urlretrieve|"
+    r"makedirs\(|\.mkdir\(")
+
+
+def writes_files(code: str) -> bool:
+    return bool(_WRITES_FILES.search(code))
+
+
+Run = Tuple[Optional[float], ExecutionResult]  # (final loss, or None if the run failed or diverged; the run)
+
 class MultiseedAgent:
     """Agent that validates candidate patches using multi-seed statistical testing."""
 
@@ -327,6 +342,10 @@ class MultiseedAgent:
         measured: bool = False,
         max_steps: Optional[int] = None,
         script_args: Optional[List[str]] = None,
+        workers: Optional[int] = None,
+        sequential: bool = True,
+        interim_seeds: int = 3,
+        interim_alpha: float = 0.01,
     ):
         # 3 to 5 distinct seeds as specified in the brief
         self.seeds = list(seeds) if seeds is not None else [42, 1337, 2024, 7, 99]
@@ -338,8 +357,17 @@ class MultiseedAgent:
         self.measured = measured  # run through script_runner, so any script works
         self.max_steps = max_steps
         self.script_args = list(script_args or [])
-        self._baselines: Dict[int, Tuple[List[float], List[ExecutionResult]]] = {}
+        # Runs at the same time. None: about half the CPU cores, or 1 for code that writes files.
+        self.workers = workers
+        # Two looks at the data: after `interim_seeds` seeds the test may stop early, at a stricter level
+        # (`interim_alpha`); otherwise the rest of the seeds run and the final test uses `alpha - interim_alpha`.
+        # The two levels add up to `alpha`, so the chance of accepting a patch that does nothing stays at most `alpha`.
+        self.sequential = sequential
+        self.interim_seeds = interim_seeds
+        self.interim_alpha = interim_alpha
+        self._baseline_runs: Dict[Tuple[int, int], Run] = {}  # (hash of the code, seed) -> run, reused for every candidate
         self.as_file: Optional[str] = None
+        self._own_sandbox = sandbox is None
         self.telemetry_forwarder = telemetry_forwarder or TelemetryForwarder()
         self.sandbox = sandbox or SubprocessSandbox(
             SandboxConfig(
@@ -374,30 +402,68 @@ class MultiseedAgent:
                 pass
         return None
 
+    def _run_one(self, code: str, seed: int) -> Run:
+        if self.measured:
+            res = self.sandbox.run_measured(code, seed=seed, max_steps=self.max_steps, timeout=self.timeout_per_run,
+                                            script_args=self.script_args, as_file=self.as_file)
+        else:
+            res = self.sandbox.run_code(code, seed=seed, timeout=self.timeout_per_run)
+        loss = self._extract_loss(res)
+        finite = res.success and loss is not None and math.isfinite(loss)
+        return (loss if finite else None), res
+
+    def _workers_for(self, codes: Sequence[str], jobs: int) -> int:
+        if self.workers is not None:
+            return max(1, min(self.workers, jobs))
+        if any(writes_files(code) for code in codes):
+            return 1
+        return max(1, min(jobs, (os.cpu_count() or 2) // 2))
+
+    def _run_many(self, jobs: List[Tuple[str, int]]) -> List[Run]:
+        """Run (code, seed) jobs, several at a time when that is safe. Results keep the order of `jobs`."""
+        if not jobs:
+            return []
+        workers = self._workers_for({code for code, _ in jobs}, len(jobs))
+        if workers <= 1:
+            return [self._run_one(code, seed) for code, seed in jobs]
+        if self._own_sandbox and self.sandbox.config.max_cpu_cores is None:
+            # each child gets its share of the cores, so the runs do not fight over threads
+            self.sandbox.config.max_cpu_cores = max(1, (os.cpu_count() or 2) // workers)
+        with ThreadPoolExecutor(workers) as pool:
+            return list(pool.map(lambda job: self._run_one(*job), jobs))
+
     def evaluate_code_across_seeds(
         self,
         code: str,
         seeds: Sequence[int],
     ) -> Tuple[List[float], List[ExecutionResult]]:
-        """Run code across all specified seeds and return (losses, results)."""
-        losses: List[float] = []
-        results: List[ExecutionResult] = []
+        """Run code across all specified seeds and return (finite losses, results)."""
+        runs = self._run_many([(code, seed) for seed in seeds])
+        return [loss for loss, _ in runs if loss is not None], [res for _, res in runs]
 
-        for seed in seeds:
-            if self.measured:
-                res = self.sandbox.run_measured(code, seed=seed, max_steps=self.max_steps, timeout=self.timeout_per_run,
-                                                script_args=self.script_args, as_file=self.as_file)
-            else:
-                res = self.sandbox.run_code(code, seed=seed, timeout=self.timeout_per_run)
-            results.append(res)
-            loss = self._extract_loss(res)
-            if res.success and loss is not None and math.isfinite(loss):
-                losses.append(loss)
-            else:
-                # Execution failed or diverged
-                pass
+    def _run_pair(self, baseline_code: str, patched_code: str, seeds: Sequence[int]) -> Tuple[List[Run], List[Run]]:
+        """The baseline and the patched code on `seeds`, all at once. Baseline runs are reused when cached."""
+        key = hash(baseline_code)
+        missing = [seed for seed in seeds if (key, seed) not in self._baseline_runs]
+        runs = self._run_many([(baseline_code, seed) for seed in missing] + [(patched_code, seed) for seed in seeds])
+        for seed, run in zip(missing, runs):
+            self._baseline_runs[(key, seed)] = run
+        return [self._baseline_runs[(key, seed)] for seed in seeds], runs[len(missing):]
 
-        return losses, results
+    def _interim(self, base: List[Run], patch: List[Run]) -> Optional[str]:
+        """After the first seeds: 'reject' (the patch failed), 'accept' (already significant at the stricter
+        level), 'futility' (no improvement on average, so it cannot pass), or None (run the other seeds)."""
+        if any(loss is None for loss, _ in patch):
+            return "reject"
+        if any(loss is None for loss, _ in base):
+            return None  # the baseline-failed route needs every seed
+        comparison = compare_distributions([l for l, _ in base], [l for l, _ in patch],
+                                           alpha=self.interim_alpha, prefer_test=self.prefer_test)
+        if comparison.is_significant:
+            return "accept"
+        if comparison.mean_difference <= 0:
+            return "futility"
+        return None
 
     def verify_patch(
         self,
@@ -407,22 +473,31 @@ class MultiseedAgent:
         """Verify a single candidate patch against baseline code across seeds."""
         patched_code = apply_patch_string(baseline_code, candidate)
 
-        # 1. Run baseline across seeds (once: every candidate is compared with the same runs)
-        key = hash(baseline_code)
-        if key not in self._baselines:
-            self._baselines[key] = self.evaluate_code_across_seeds(baseline_code, self.seeds)
-        base_losses, base_results = self._baselines[key]
+        staged = self.sequential and len(self.seeds) > self.interim_seeds
+        seeds_used = list(self.seeds[:self.interim_seeds] if staged else self.seeds)
+        base, patch = self._run_pair(baseline_code, patched_code, seeds_used)
+        stopped = self._interim(base, patch) if staged else None
+        if staged and stopped is None:
+            rest = list(self.seeds[len(seeds_used):])
+            more_base, more_patch = self._run_pair(baseline_code, patched_code, rest)
+            base, patch, seeds_used = base + more_base, patch + more_patch, seeds_used + rest
+        n = len(seeds_used)
+        alpha = self.alpha if not staged else (self.interim_alpha if stopped else self.alpha - self.interim_alpha)
+        sequential_info = {"staged": staged, "seeds_planned": len(self.seeds), "seeds_run": n,
+                           "stopped_early": stopped, "alpha_used": alpha}
 
-        # 2. Run patched code across seeds
-        patch_losses, patch_results = self.evaluate_code_across_seeds(patched_code, self.seeds)
+        base_losses = [loss for loss, _ in base if loss is not None]
+        patch_losses = [loss for loss, _ in patch if loss is not None]
+        base_results = [res for _, res in base]
+        patch_results = [res for _, res in patch]
 
         # Compute budget proxy: total runtime of all runs
         total_duration = sum(r.duration_seconds for r in base_results + patch_results)
-        budget_used = min(1.0, total_duration / (self.timeout_per_run * len(self.seeds) * 2))
+        budget_used = min(1.0, total_duration / (self.timeout_per_run * n * 2))
 
         # Check for crashes or failures in patched runs
         failed_patch_runs = [r for r in patch_results if not r.success]
-        if failed_patch_runs or len(patch_losses) < len(self.seeds):
+        if failed_patch_runs or len(patch_losses) < n:
             err_msg = failed_patch_runs[0].error_message if failed_patch_runs else "Patch caused NaN/divergence"
             return ValidationVerdict(
                 patch_candidate=candidate,
@@ -430,30 +505,39 @@ class MultiseedAgent:
                 validator="multiseed_stats",
                 p_value=1.0,
                 effect_size=0.0,
-                seeds_run=len(self.seeds),
+                seeds_run=n,
                 compute_budget_used=budget_used,
-                notes=f"Verification rejected: candidate failed on {len(self.seeds) - len(patch_losses)} seed(s). Error: {err_msg}",
+                notes=f"Verification rejected: candidate failed on {n - len(patch_losses)} seed(s). Error: {err_msg}",
                 extra={
                     "baseline_losses": base_losses,
                     "patched_losses": patch_losses,
                     "failed_runs": len(failed_patch_runs),
+                    "sequential": sequential_info,
                 },
             )
 
         # Check baseline: if baseline succeeded on all seeds, compare distributions
-        if len(base_losses) == len(self.seeds):
+        if len(base_losses) == n:
             stats_comparison = compare_distributions(
                 baseline_losses=base_losses,
                 patched_losses=patch_losses,
-                alpha=self.alpha,
+                alpha=alpha,
                 prefer_test=self.prefer_test,
             )
             accepted = stats_comparison.is_significant
             p_val = stats_comparison.p_value
             effect_size = stats_comparison.effect_size
             notes = stats_comparison.notes
+            if stopped == "accept":
+                notes += f" Stopped after {n} of {len(self.seeds)} seeds: the result was already clear at the stricter level."
+            elif stopped == "futility":
+                notes += f" Stopped after {n} of {len(self.seeds)} seeds: the patch did not lower the loss on average."
+            elif staged:
+                notes += (f" Tested in two looks ({self.interim_seeds} seeds at p < {self.interim_alpha}, then all "
+                          f"{n} at p < {alpha:g}), so the overall false-accept rate stays at or below {self.alpha}.")
             extra = stats_comparison.to_dict()
-            extra["ks_test"] = compare_distributions(base_losses, patch_losses, alpha=self.alpha, prefer_test="ks_test").to_dict()
+            extra["ks_test"] = compare_distributions(base_losses, patch_losses, alpha=alpha, prefer_test="ks_test").to_dict()
+            extra["sequential"] = sequential_info
         else:
             # The unpatched script crashed or diverged, so there are no baseline numbers to test against.
             # The patch is accepted because it trains on every seed, and no statistic is reported:
@@ -461,13 +545,14 @@ class MultiseedAgent:
             accepted = True
             p_val = None
             effect_size = None
-            failures = len(self.seeds) - len(base_losses)
+            failures = n - len(base_losses)
             notes = (f"No statistical test was possible: the unpatched script failed or gave no finite loss on "
-                     f"{failures} of {len(self.seeds)} seeds, while the patched script trained on all of them.")
+                     f"{failures} of {n} seeds, while the patched script trained on all of them.")
             extra = {
                 "baseline_losses": base_losses,
                 "patched_losses": patch_losses,
-                "baseline_failures": len(self.seeds) - len(base_losses),
+                "baseline_failures": failures,
+                "sequential": sequential_info,
             }
 
         return ValidationVerdict(
@@ -476,7 +561,7 @@ class MultiseedAgent:
             validator="multiseed_stats",
             p_value=p_val,
             effect_size=effect_size,
-            seeds_run=len(self.seeds),
+            seeds_run=n,
             compute_budget_used=budget_used,
             notes=notes,
             extra=extra,

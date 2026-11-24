@@ -43,7 +43,7 @@ flowchart TD
     START(["Training Script / Codebase"]) --> S["Supervisor Agent<br/>(LangGraph StateGraph Coordinator)"]
 
     subgraph Perception["1. Perception and Detection"]
-        DET_TOOL["Deterministic Tools:<br/>• AST Visitor Rules (10 rules)<br/>• PyTorch Runtime Hooks (loss, grads, activations)"]
+        DET_TOOL["Deterministic Tools:<br/>• AST Visitor Rules (10 rules)<br/>• PyTorch Runtime Hooks (loss, grads, activations)<br/>• Trained trace classifier (numpy, a few KB)"]
         DET_LLM["Perception Agent:<br/>• LLM Semantic Intent Reviewer<br/>• Runtime Anomaly Consolidator"]
         DET_TOOL --> DET_LLM
     end
@@ -62,7 +62,7 @@ flowchart TD
 
     subgraph Validation["4. Empirical Validation Sandbox "]
         VAL_GATE1["Gate 1: One-Batch Overfit Oracle<br/>• Numeric sanity and gradient flow check"]
-        VAL_GATE2["Gate 2: Multi-Seed Statistical Sandbox<br/>• Subprocess isolation across 5 seeds<br/>• Paired t-test, KS-test, Cohen's d and confidence intervals"]
+        VAL_GATE2["Gate 2: Multi-Seed Statistical Sandbox<br/>• 3 to 5 seeds in parallel subprocesses<br/>• Stops after 3 when the answer is already clear<br/>• Paired t-test, KS-test, Cohen's d and confidence intervals"]
         VAL_LLM["Validation Analyzer Agent:<br/>• Distinguishes true fixes from seed luck"]
         VAL_GATE1 --> VAL_GATE2 --> VAL_LLM
     end
@@ -164,7 +164,7 @@ python -m silent_bug_agent doctor --live
 
 ## CLI Usage
 
-The CLI has four core commands (`scan`, `monitor`, `diagnose`, `fix`), plus `apply`, `wsp`, `doctor` and `ui`. Arguments for your own script go after `--`.
+The CLI has four core commands (`scan`, `monitor`, `diagnose`, `fix`), plus `snippet`, `apply`, `wsp`, `doctor` and `ui`. Arguments for your own script go after `--`.
 
 > **The bundled examples are protected.** The tests and the results below depend on the bugs planted in `examples/`, so those files are never edited. `fix` validates and shows the patch, and `apply` writes the fixed version to `fixed_examples/<name>.py` instead. To have a file patched in place, work on your own script or a copy:
 > ```bash
@@ -182,6 +182,18 @@ python -m silent_bug_agent scan examples/sample_scripts/buggy_mnist.py --semanti
 # Output machine-readable JSON for CI/CD
 python -m silent_bug_agent scan examples/sample_scripts/buggy_mnist.py --json
 ```
+
+### 1b. Code snippets (`snippet`, static only)
+For a fragment rather than a whole script: a few lines pasted from a notebook, a chat or a code review. The parser removes markdown fences and `>>>` prompts, removes common indentation, wraps the code in a function when it needs one, and drops an unfinished last line, and it says which of these it did. Line numbers in the findings point at the pasted text.
+```bash
+python -m silent_bug_agent snippet examples/snippets/training_step.txt
+pbpaste | python -m silent_bug_agent snippet              # macOS clipboard
+Get-Clipboard | python -m silent_bug_agent snippet        # Windows PowerShell
+```
+A snippet is read, never run, so its findings are **not validated**: the report says so on every run. To test a repair, run `fix` on the full training script. In the terminal UI this is the **SNIPPET** entry.
+
+### 1c. The trace classifier (a small model trained in this project)
+`fix` and `diagnose` also run the script once, traced, next to the runtime monitor, and a 13 KB numpy model trained on 700 generated buggy runs gives its guess: `Trace classifier (a trained model; a hint, not proof): missing_zero_grad 0.98, ...`. By default it only advises. `--learned active` lets it add findings and re-rank causes, but that was measured to make the benchmark results worse (8 instead of 9 repaired), and `--learned off` skips it. How it was built, how accurate it is and why it is advisory: [docs/learned_classifier.md](docs/learned_classifier.md).
 
 ### 2. Live Runtime Monitoring (`monitor`)
 Runs a training script under PyTorch inspection hooks to catch gradient explosions, loss divergence, frozen layers and more:
@@ -246,27 +258,43 @@ Its Fix screen always validates first, then asks: apply the fix, do not apply, o
 
 ## Results
 
-`python examples/evaluate_pipeline.py --offline` runs all 8 benchmarks twice through the full pipeline on private copies: once buggy, and once healthy (with `--fix`), to measure the damage rate too.
+`python examples/evaluate_pipeline.py --offline --new` runs all 18 benchmarks through the full pipeline on private copies: once buggy, and once healthy (as if run with `--fix`), to measure the damage rate too. **The pipeline sees blind copies**, saved as `train.py`: the docstring, the `# BUG:` comments, the `--fix` switch and the benchmark's name are all removed (`silent_bug_agent/mutation/blind.py`), so nothing in the file gives the bug away. Offline, the rules do not use those hints: the summary for 01 to 08 (8, 8 and 7 of 8 below) is the same as in the earlier evaluation of the raw files.
 
-Measured on 3 November 2026, offline (no LLM key), CPU only, 5 seeds per arm:
+Measured on 24 November 2026, offline (no LLM key), CPU only (Apple M2), 5 seeds per arm, trace classifier advisory:
 
-| Benchmark | Planted bug | Fixed | Bug the accepted patch fixed | p-value | Healthy twin |
-|---|---|---|---|---|---|
-| 01 | missing `zero_grad()` | yes | missing_zero_grad | 0.005 | left alone |
-| 02 | `model.eval()` missing | yes | train_eval_mode_mismatch | 0.0003 | left alone |
-| 03 | layer left out of the optimizer | yes | frozen_layer_no_grad | 0.0002 | left alone |
-| 04 | softmax before CrossEntropyLoss | yes | softmax_before_cross_entropy | 0.0003 | edited (see below) |
-| 05 | learning rate 50 | yes | learning_rate_misconfigured | < 0.0001 | left alone |
-| 06 | dead ReLUs from bias −100 | yes | dead_relu | < 0.0001 | left alone |
-| 07 | `reduction="sum"` | yes | learning_rate_misconfigured (symptom) | 0.087 | left alone |
-| 08 | unnormalised inputs | yes | non_normalized_inputs | 0.001 | left alone |
+| Benchmark | Planted bug | Fixed | Bug the accepted patch fixed | p-value | Time | Healthy twin |
+|---|---|---|---|---|---|---|
+| 01 | missing `zero_grad()` | yes | missing_zero_grad | 0.005 | 26 s | left alone |
+| 02 | `model.eval()` missing | yes | train_eval_mode_mismatch | 0.004 | 22 s | left alone |
+| 03 | layer left out of the optimizer | yes | frozen_layer_no_grad | 0.007 | 18 s | left alone |
+| 04 | softmax before CrossEntropyLoss | yes | softmax_before_cross_entropy | 0.0003 | 28 s | edited (harmless, see below) |
+| 05 | learning rate 50 | yes | learning_rate_misconfigured | < 0.0001 | 19 s | left alone |
+| 06 | dead ReLUs from bias −100 | yes | dead_relu | 0.002 | 21 s | left alone |
+| 07 | `reduction="sum"` | yes | learning_rate_misconfigured (symptom) | 0.087 | 40 s | left alone |
+| 08 | unnormalised inputs | yes | non_normalized_inputs | 0.003 | 22 s | left alone |
 
-- **Repaired:** 8 of 8. **Right cause ranked first:** 8 of 8. **Accepted patch fixed the planted bug itself:** 7 of 8.
-- **Benchmark 07:** the real fix (`reduction="mean"`) was tried first and rejected, because on this benchmark it gave no significant gain (p = 0.088). The accepted patch lowers the learning rate instead, which offsets the summed loss. It passed because the critical learning-rate finding disappeared and results did not get worse.
-- **Healthy twin of 04:** the softmax line is still in the file but only runs without `--fix`. The patch removed it, which changes nothing when the script runs with `--fix`, so no healthy behaviour was damaged.
-- **`buggy_mnist.py` (three bugs):** round 1 fixed softmax-before-CrossEntropyLoss (p < 0.0001). The missing `zero_grad()` fix was then rejected: on this script, accumulating gradients makes training *faster* over the first 200 steps (loss ratio 0.21 to 0.40 buggy, against 0.50 to 0.65 fixed), so a statistical gate on training loss cannot show the fix is better.
-- Each buggy benchmark takes about 70 to 80 seconds on an Apple M2 CPU; a healthy one about 5 seconds.
+- **Benchmarks 01 to 08:** repaired 8 of 8, right cause ranked first 8 of 8, accepted patch fixed the planted bug itself 7 of 8.
+- **Benchmarks 09 to 18 (harder):** repaired 1 of 10 (15, exploding gradients), right cause ranked first 6 of 10. Offline there is no repair recipe for 09 to 13, so they are found but not fixed; 14, 17 and 18 are not detected at all. These are the ones that need an LLM.
+- **All 18:** repaired 9, right cause first 14, planted bug itself fixed 8. **Healthy scripts changed: 2 of 17** (09 has no healthy twin: its `--fix` changes nothing).
+- **Benchmark 07:** the real fix (`reduction="mean"`) was tried first and rejected, because on this benchmark it gave no significant gain. The accepted patch lowers the learning rate instead, which offsets the summed loss. It passed because the critical learning-rate finding disappeared and results did not get worse.
+- **Healthy twin of 04:** the softmax line is still in the file, in a branch that never runs. The patch removed it, which changes no behaviour.
+- **Healthy twin of 16 (a false positive):** the dead-ReLU detector fired on the healthy version and a bias-initialisation patch was accepted on the "bug removed and not worse" route (p = 0.055). The code was changed without a measured need.
+- **`buggy_mnist.py` (three bugs):** round 1 fixes softmax-before-CrossEntropyLoss (p < 0.0001). The missing `zero_grad()` fix is then rejected: on this script, accumulating gradients makes training *faster* over the first 200 steps, so a statistical gate on training loss cannot show the fix is better.
 - The LLM agents were tested against a local fake provider. Their live repair rate has not been measured yet.
+
+### Where the time goes, and what was done about it
+
+Every `fix` run now ends with a `Time:` line, and the `--json` result has a `timings` block for each stage (`perception.monitor`, `validation.gate1`, `validation.gate2`, `validation.bug_check`, `llm`, ...). Timing one offline run showed where the time went: **validation took 94% of it, and Gate 2 alone 80%** (50 of 63 seconds on benchmark 01). An LLM call takes about a second; a validation run takes several. So a faster or local model would barely change how long a run takes, and the work went into validation instead:
+
+| Change | Effect |
+|---|---|
+| Gate 2 runs its seeds in parallel subprocesses (about half the cores; one at a time for a script that writes files or downloads data) | Gate 2: 50 s → 16 s |
+| Baseline runs are cached per seed and reused for every candidate | a second candidate costs only its own runs |
+| With 5 seeds, Gate 2 looks twice: after 3 seeds it stops if the answer is already clear (p < 0.01) or hopeless (no improvement on average); otherwise all 5 run and the final level is p < 0.04, so the false-accept rate stays at or below 5% | up to 4 of 10 runs saved |
+| The bug check runs at the same time as Gate 2 instead of after it | about 4 s |
+| `script_runner` no longer imports scipy and the agents in every child process | 1 s off each of the ~13 runs (start-up 2.6 s → 0.06 s before torch) |
+
+Benchmark 01 offline, Apple M2, 8 cores: **63 s → 22 s**, with the same accepted patch and the same p-value (0.0052). Benchmark 04: 61 s → 21 s (p = 0.00035 both times).
 
 ---
 
@@ -295,12 +323,14 @@ AgenticDLDebugger/
 │   ├── invariants/                   # Module 0: Invariant check library
 │   ├── taxonomy/                     # Module 0: Silent bug YAML taxonomy
 │   ├── runtime/                      # Module 1: PyTorch hooks, profiling, session
-│   ├── static/                       # Module 2: 10 AST-based static bug rules
+│   ├── static/                       # Module 2: 10 AST-based static bug rules; snippet.py checks code fragments
 │   ├── semantic/                     # Module 2: LLM reviewer, Groq/Cerebras client, model router
 │   ├── validation/                   # Module 3: Overfit oracle, multiseed sandbox, script runner, analyzer
 │   ├── diagnosis/                    # Module 4: causal engine, taxonomy graph, bridge to the bug list
 │   ├── repair/                       # Module 5: Patch application, AST repair recipes, pending patches for `apply`
 │   ├── wsp/                          # Read-only weight inspector
+│   ├── mutation/                     # Blind benchmark copies, generated healthy scripts, bug-planting operators, dataset builder
+│   ├── learned/                      # Trace classifier: tracer, features, numpy model, training script, shipped weights.json
 │   ├── learning/                     # Module 6: ChromaDB experience store & bandit
 │   └── agents/                       # Autonomous agent nodes:
 │       ├── supervisor.py             # Central orchestrator state machine (LangGraph)
@@ -321,9 +351,11 @@ AgenticDLDebugger/
 │   │   ├── benchmark_06_dead_relu.py
 │   │   ├── benchmark_07_wrong_loss_reduction.py
 │   │   └── benchmark_08_unnormalized_inputs.py
+│   ├── new/                          # Benchmarks 09 to 18 (harder bugs)
+│   ├── snippets/                     # Code fragments for `snippet`
 │   ├── benchmark_hooks.py            # Module 1 overhead benchmark
 │   └── evaluate_pipeline.py          # Repair rate and damage rate on the benchmarks
-└── tests/                            # 430 automated tests (pytest)
+└── tests/                            # 472 automated tests (pytest)
 ```
 
 ---
@@ -352,6 +384,9 @@ python -m pytest tests/test_runtime_monitor_agent.py -v
 
 # Full pipeline, offline and with a fake LLM provider (slow: real training runs)
 python -m pytest tests/test_supervisor_pipeline.py -v
+
+# Parallel, two-look Gate 2; blind benchmark copies, snippets and mutation operators; the trace classifier
+python -m pytest tests/test_faster_validation.py tests/test_blind_snippet_mutation.py tests/test_learned.py -v
 ```
 
 ---
@@ -366,6 +401,9 @@ python -m pytest tests/test_supervisor_pipeline.py -v
 - The LLM path has been tested against a fake provider. Run `doctor --live` once real keys are in `.env`.
 - Dead units are measured only for `nn.ReLU` modules. A model that calls `F.relu` is not checked for dead units.
 - A script that needs its own command-line arguments must be given them after `--`.
+- `snippet` only reads code. Its findings are not validated, and a rule that needs to see where a variable came from (for example that `criterion` is a `CrossEntropyLoss`) can only fire if that line is in the snippet.
+- Gate 2 decides whether a script is safe to run in parallel from its source (file writes, downloads). A script that writes files some other way should be run with `MultiseedAgent(workers=1)`.
+- The trace classifier was trained on generated scripts and knows nine bugs; see [docs/learned_classifier.md](docs/learned_classifier.md) for how well it does on hand-written ones.
 
 ---
 

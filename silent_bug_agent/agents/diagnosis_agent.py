@@ -67,6 +67,7 @@ from silent_bug_agent.diagnosis.models.findings import (
 )
 from silent_bug_agent.diagnosis.models.hypothesis import DiagnosisResult, Hypothesis
 from silent_bug_agent.findings import Report
+from silent_bug_agent.learned.prior import apply_prior, prompt_line
 from silent_bug_agent.schemas import AgentState, DiagnosticHypothesis
 from silent_bug_agent.semantic.client import LLMClient, LLMError
 from silent_bug_agent.taxonomy.loader import load_taxonomy
@@ -94,6 +95,7 @@ class DiagnosisAgent:
         self._normalizer = FindingNormalizer()
         self._engine = CausalEngine()
         self.client = client
+        self.learned: Optional[Dict[str, Any]] = None  # the trace classifier's prediction for this run, if any
         logger.debug("DiagnosisAgent initialised.")
 
     # ------------------------------------------------------------------
@@ -111,6 +113,8 @@ class DiagnosisAgent:
         hypotheses = hypotheses_from_report(report, scores)
         if self.client is not None:
             hypotheses = self._reason(hypotheses, report, source)
+        else:
+            hypotheses = apply_prior(hypotheses, self.learned)
         return hypotheses
 
     def _reason(self, hypotheses: List[DiagnosticHypothesis], report: Report,
@@ -121,6 +125,8 @@ class DiagnosisAgent:
         catalog = "\n".join(f"- {p.id}: {p.name}" for p in patterns)
         evidence = "\n".join(f"- {f.bug_id} [{f.severity.value}] from {f.detector}, line {f.line}: {f.message[:200]}"
                              for f in report.findings[:20])
+        if self.learned:
+            evidence += "\n" + prompt_line(self.learned)
         lines = [f.line for f in report.findings if f.line]
         prompt = prompts.diagnosis_prompt(hypotheses, catalog, prompts.numbered_source(source, lines), evidence)
         try:
@@ -163,6 +169,9 @@ class DiagnosisAgent:
                 source = Path(state.target_file).read_text(encoding="utf-8")
             except (OSError, UnicodeError) as exc:
                 logger.warning("could not read %s: %s", state.target_file, exc)
+        learned = state.extra.get("learned")
+        # only an "active" classifier takes part in the ranking; "advisory" is shown to the user and nothing else
+        self.learned = learned if learned and learned.get("mode") == "active" else None
         state.hypotheses = self.diagnose_report(state.detection_report or Report(), source)
         return state
 

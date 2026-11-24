@@ -15,15 +15,19 @@ import ast
 import hashlib
 import os
 import tempfile
+import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, TypedDict
+from typing import Any, Callable, Dict, Iterator, List, Optional, Sequence, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 
 from ..diagnosis.bridge import category_of
 from ..findings import Report, merge_reports
+from ..learned.prior import finding_from, predict_script
 from ..learning.experience_store import ExperienceStore
 from ..repair.loop import AutonomousRepairLoop
 from ..repair.patch_utils import MalformedDiffError, apply_patch_to_file, apply_unified_diff
@@ -65,10 +69,29 @@ class PipelineConfig:
     offline: bool = False
     meta_every: int = 5
     use_vectors: bool = True
+    # the trained trace classifier (silent_bug_agent/learned): "advisory" shows its guess, "active" lets it add
+    # findings and re-rank causes (measured to be worse on the benchmarks), "off" skips its traced run
+    learned: str = "advisory"
 
 
 class GraphState(TypedDict):
     state: AgentState
+
+
+# ------------------------------------------------------------------ timing
+def add_time(state: AgentState, stage: str, seconds: float) -> None:
+    """Add wall-clock seconds to a stage of this run (`state.extra["timings"]`)."""
+    timings = state.extra.setdefault("timings", {})
+    timings[stage] = round(timings.get(stage, 0.0) + seconds, 3)
+
+
+@contextmanager
+def timed(state: AgentState, stage: str) -> Iterator[None]:
+    started = time.perf_counter()
+    try:
+        yield
+    finally:
+        add_time(state, stage, time.perf_counter() - started)
 
 
 class SupervisorAgent:
@@ -99,7 +122,7 @@ class SupervisorAgent:
         graph = StateGraph(GraphState)
         for name, node in (("perception", self._perception), ("diagnosis", self._diagnosis), ("repair", self._repair),
                            ("validation", self._validation), ("feedback", self._feedback), ("memory", self._memory)):
-            graph.add_node(name, node)
+            graph.add_node(name, self._timed(name, node))
         graph.add_edge(START, "perception")
         graph.add_conditional_edges("perception", self._after_perception, {"diagnosis": "diagnosis", "end": END})
         graph.add_conditional_edges("diagnosis", self._after_diagnosis, {"repair": "repair", "end": END})
@@ -110,14 +133,29 @@ class SupervisorAgent:
         graph.add_edge("memory", END)
         return graph.compile()
 
+    @staticmethod
+    def _timed(stage: str, node: Callable[[GraphState], GraphState]) -> Callable[[GraphState], GraphState]:
+        """Wrap a graph node so the seconds it takes are added to its stage."""
+        def run(graph_state: GraphState) -> GraphState:
+            started = time.perf_counter()
+            result = node(graph_state)
+            add_time(result["state"], stage, time.perf_counter() - started)
+            return result
+        return run
+
     # ----------------------------------------------------------------- entry
     def run(self, target_file: str) -> AgentState:
         state = AgentState(run_id=uuid.uuid4().hex[:12], target_file=str(target_file),
                            max_iterations=self.config.max_iterations, status=AgentStatus.RUNNING,
                            extra={"script_args": list(self.config.script_args)})
         self._exclude_declined(state)
+        started, calls_before = time.perf_counter(), len(self.router.calls)
         result = self.graph.invoke({"state": state}, config={"recursion_limit": 20 + 8 * self.config.max_iterations})
         final: AgentState = result["state"]
+        timings = final.extra.setdefault("timings", {})
+        timings["total"] = round(time.perf_counter() - started, 3)
+        # LLM time is part of the stages above, not extra to them
+        timings["llm"] = round(sum(c["seconds"] for c in self.router.calls[calls_before:]), 3)
         final.extra["llm"] = self.router.summary()
         final.extra["memory_notes"] = list(self.memory.notes)
         return final
@@ -158,14 +196,30 @@ class SupervisorAgent:
             self.emitter.phase("perception", "start")
         state = graph_state["state"]
         path = Path(state.target_file)
-        state.detection_report = self.static.analyze_file(path)
+        with timed(state, "perception.static"):
+            state.detection_report = self.static.analyze_file(path)
         client = self.router.task("semantic_review")
         if client is not None:
-            semantic = SemanticAnalyzer(client).analyze_file(path)
-            state.detection_report = merge_reports(state.detection_report, semantic)
+            with timed(state, "perception.semantic_review"):
+                semantic = SemanticAnalyzer(client).analyze_file(path)
+                state.detection_report = merge_reports(state.detection_report, semantic)
         self.detection_agent.config.cwd = str(path.resolve().parent)
-        state = self.detection_agent(state)
-        self._consolidate(state)
+        started = time.perf_counter()
+        with ThreadPoolExecutor(1) as pool:
+            # the traced run for the classifier is independent of the monitor, so both run at once
+            learned = pool.submit(self._learned_prediction, path) if self.config.learned != "off" else None
+            state = self.detection_agent(state)
+            add_time(state, "perception.monitor", time.perf_counter() - started)
+            prediction = learned.result() if learned is not None else None
+        if prediction is not None:
+            state.extra["learned"] = dict(prediction, mode=self.config.learned)
+            add_time(state, "perception.learned", prediction["seconds"])
+            known = [f.bug_id for f in state.detection_report.findings]
+            extra = finding_from(prediction, str(path), known) if self.config.learned == "active" else None
+            if extra is not None:
+                state.detection_report.findings.append(extra)
+        with timed(state, "perception.consolidate"):
+            self._consolidate(state)
         summary = state.extra.get("runtime_monitor") or {}
         if summary.get("script_status") == "error":
             state.status = AgentStatus.FAILED
@@ -178,6 +232,13 @@ class SupervisorAgent:
         if self.emitter:
             self.emitter.phase("perception", "done", findings=len(state.detection_report.findings))
         return {"state": state}
+
+    def _learned_prediction(self, path: Path) -> Optional[Dict[str, Any]]:
+        try:
+            return predict_script(path, script_args=self.config.script_args,
+                                  timeout=self.config.timeout_per_run, max_steps=60)
+        except Exception:  # noqa: BLE001 - the classifier is only a hint; it must never stop a run
+            return None
 
     def _consolidate(self, state: AgentState) -> None:
         client = self.router.task("perception")
@@ -242,6 +303,10 @@ class SupervisorAgent:
     def _bug_gone(self, state: AgentState, candidate: PatchCandidate, patched: str) -> Optional[bool]:
         """Is the targeted bug absent when the detectors run on the patched code?"""
         bug = candidate.hypothesis_bug_id
+        reported = [f for f in (state.detection_report.findings if state.detection_report else []) if f.bug_id == bug]
+        if reported and all(f.rule == "trace_classifier" for f in reported):
+            # only the trace classifier saw this bug, so the detectors cannot show it is gone: statistics decide
+            return None
         original = Path(state.target_file)
         if any(f.bug_id == bug for f in self.static.analyze_code(patched, str(original)).findings):
             return False
@@ -269,17 +334,27 @@ class SupervisorAgent:
         verdicts: List[ValidationVerdict] = state.validation_verdicts
         if self.emitter:
             self.emitter.phase("gate1", "start")
-        self.overfit(state)
+        with timed(state, "validation.gate1"):
+            self.overfit(state)
         overfit = verdicts[-1]
         if self.emitter:
             self.emitter.phase("gate1", "done", accepted=overfit.accepted)
             if overfit.accepted:
                 self.emitter.phase("gate2", "start")
-        self.multiseed(state) if overfit.accepted else self._skip_gate_two(state, candidate)
+        bug_gone: Optional[bool] = None
+        with timed(state, "validation.gate2"):
+            if overfit.accepted:
+                # The bug check (is the targeted bug gone from the patched code?) does not depend on Gate 2,
+                # so it runs at the same time. Its seconds overlap Gate 2's.
+                with ThreadPoolExecutor(1) as pool:
+                    check = pool.submit(self._timed_bug_check, state, candidate, patched)
+                    self.multiseed(state)
+                    bug_gone = check.result()
+            else:
+                self._skip_gate_two(state, candidate)
         multiseed = verdicts[-1]
         if self.emitter:
             self.emitter.phase("gate2", "done", accepted=multiseed.accepted, skipped=not overfit.accepted)
-        bug_gone = self._bug_gone(state, candidate, patched) if overfit.accepted else None
         hypothesis = next((h for h in state.hypotheses if h.bug_id == candidate.hypothesis_bug_id), None)
         strong = hypothesis is None or hypothesis.extra.get("max_severity", "warning") != "info"
         final = self.analyzer.analyze(candidate, overfit, multiseed, bug_gone, strong)
@@ -295,6 +370,10 @@ class SupervisorAgent:
             )
         candidate.extra.update({"validated": True, "status": "accepted" if final.accepted else "rejected"})
         return {"state": state}
+
+    def _timed_bug_check(self, state: AgentState, candidate: PatchCandidate, patched: str) -> Optional[bool]:
+        with timed(state, "validation.bug_check"):
+            return self._bug_gone(state, candidate, patched)
 
     @staticmethod
     def _skip_gate_two(state: AgentState, candidate: PatchCandidate) -> None:
@@ -421,4 +500,17 @@ def describe_state(state: AgentState) -> Dict[str, Any]:
         "summary": state.extra.get("perception_summary"),
         "meta": state.extra.get("meta"),
         "memory_notes": state.extra.get("memory_notes", []),
+        "timings": dict(state.extra.get("timings", {})),
+        "learned": state.extra.get("learned"),
     }
+
+
+def time_breakdown(timings: Dict[str, float]) -> str:
+    """One line saying where a run's time went, largest stage first."""
+    total = timings.get("total") or 0.0
+    stages = {k: v for k, v in timings.items() if "." not in k and k not in ("total", "llm") and v > 0}
+    if not total or not stages:
+        return ""
+    parts = [f"{name} {seconds:.1f}s ({100 * seconds / total:.0f}%)"
+             for name, seconds in sorted(stages.items(), key=lambda item: -item[1])]
+    return f"Time: {total:.1f}s total. " + ", ".join(parts) + f". LLM calls: {timings.get('llm', 0.0):.1f}s of it."

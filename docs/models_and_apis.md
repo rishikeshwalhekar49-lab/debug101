@@ -43,6 +43,16 @@ at https://console.groq.com/settings/limits. One `fix` run makes about 5 to 10
 calls. Prompts are cut to about 12,000 characters of source so a call fits under
 Groq's 8,000 tokens a minute.
 
+## The model trained in this project
+
+Besides the hosted LLMs there is one small model of our own, the trace classifier
+(`silent_bug_agent/learned/`). It is not an LLM and does not read code: it reads the
+numbers a 60-step traced run produces (gradient norms, zero_grad calls, output and
+input statistics, dead ReLUs, ...) and gives a probability for each of nine bugs
+and "clean". It is a numpy model of a few kilobytes that ships inside the package,
+runs on the CPU in microseconds and needs no key or download. How it is trained and
+how well it does are in [learned_classifier.md](learned_classifier.md).
+
 ## Things to know
 
 - The training script you scan is sent to the provider. Check its terms before
