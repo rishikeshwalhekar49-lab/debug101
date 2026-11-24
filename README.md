@@ -193,7 +193,13 @@ Get-Clipboard | python -m silent_bug_agent snippet        # Windows PowerShell
 A snippet is read, never run, so its findings are **not validated**: the report says so on every run. To test a repair, run `fix` on the full training script. In the terminal UI this is the **SNIPPET** entry.
 
 ### 1c. The trace classifier (a small model trained in this project)
-`fix` and `diagnose` also run the script once, traced, next to the runtime monitor, and a 13 KB numpy model trained on 700 generated buggy runs gives its guess: `Trace classifier (a trained model; a hint, not proof): missing_zero_grad 0.98, ...`. By default it only advises. `--learned active` lets it add findings and re-rank causes, but that was measured to make the benchmark results worse (8 instead of 9 repaired), and `--learned off` skips it. How it was built, how it compares with a random forest, gradient boosting, SVM, k-NN and the hand-written rules (chart: [docs/images/model_comparison.png](docs/images/model_comparison.png)), and why it is advisory: [docs/learned_classifier.md](docs/learned_classifier.md).
+`fix` and `diagnose` also run the script once, traced, next to the runtime monitor, and a small model gives its guess: `Trace classifier (a trained model; a hint, not proof): missing_zero_grad 0.98, ...`. It is a numpy softmax regression over 34 statistics of the run (350 weights, a 6.8 KB file, about 10 µs a prediction), trained on 781 runs of generated scripts with planted bugs.
+
+On 84 hand-written test runs that were never used to choose anything it names the bug (or "clean") **85.7%** of the time, on par with or slightly ahead of a random forest and an SVM given the same features (83.3%) that are 450 and 35 times bigger. It still flags about 1 in 5 healthy runs, so by default it only advises: `--learned active` lets it add findings and re-rank causes (measured with an earlier version to make the benchmark results worse), and `--learned off` skips it.
+
+![Leaderboard](docs/images/leaderboard.png)
+
+How it was built, the hand-written test set, every model it was compared with and why it is advisory: [docs/learned_classifier.md](docs/learned_classifier.md).
 
 ### 2. Live Runtime Monitoring (`monitor`)
 Runs a training script under PyTorch inspection hooks to catch gradient explosions, loss divergence, frozen layers and more:
@@ -290,11 +296,21 @@ Every `fix` run now ends with a `Time:` line, and the `--json` result has a `tim
 |---|---|
 | Gate 2 runs its seeds in parallel subprocesses (about half the cores; one at a time for a script that writes files or downloads data) | Gate 2: 50 s → 16 s |
 | Baseline runs are cached per seed and reused for every candidate | a second candidate costs only its own runs |
-| With 5 seeds, Gate 2 looks twice: after 3 seeds it stops if the answer is already clear (p < 0.01) or hopeless (no improvement on average); otherwise all 5 run and the final level is p < 0.04, so the false-accept rate stays at or below 5% | up to 4 of 10 runs saved |
+| With 5 seeds, Gate 2 looks twice: after 3 seeds it stops if the fix is already clearly better (p < 0.01); otherwise all 5 run and the final level is p < 0.04, so the false-accept rate stays at or below 5%. (It used to stop early for "no improvement so far" too; that cost one repair in the version comparison and was removed.) | 4 of 10 runs saved on clear fixes |
 | The bug check runs at the same time as Gate 2 instead of after it | about 4 s |
 | `script_runner` no longer imports scipy and the agents in every child process | 1 s off each of the ~13 runs (start-up 2.6 s → 0.06 s before torch) |
 
 Benchmark 01 offline, Apple M2, 8 cores: **63 s → 22 s**, with the same accepted patch and the same p-value (0.0052). Benchmark 04: 61 s → 21 s (p = 0.00035 both times).
+
+### Against the previous version
+
+`examples/compare_versions.py` runs two checkouts of the debugger on the same 93 scripts (the blind benchmarks with their healthy twins, and the 58-run hand-written test set), offline, each with its own `fix --dry-run --no-llm` and a fresh memory, back to back on one machine. Against the version in DLDebugger (`0619721`):
+
+![Version comparison](docs/images/versions.png)
+
+The decisions are the same (right cause first 37 of 64 for both, planted bug fixed 24 of 64 for both, 4 of 29 healthy scripts changed for both), and the run takes 2.1 times less time in total, 2.7 times less per buggy script. The one script decided differently is an autoencoder whose learning rate is too high: the new version accepted a patch for the dead ReLUs that the high learning rate causes, which is a symptom fix, not the planted bug.
+
+The comparison also caught a regression: the first version of the faster Gate 2 stopped early when a patch had not helped after 3 seeds, and that cost one repair the old version made (a patch that removes the bug and is not worse needs all 5 seeds to show it). That early stop was removed and the comparison run again; the table above is the second run.
 
 ---
 
@@ -352,10 +368,13 @@ AgenticDLDebugger/
 │   │   ├── benchmark_07_wrong_loss_reduction.py
 │   │   └── benchmark_08_unnormalized_inputs.py
 │   ├── new/                          # Benchmarks 09 to 18 (harder bugs)
+│   ├── holdout/                      # 10 hand-written scripts with bugs planted by hand: tuning (01-04) and test (05-10) sets
+│   ├── compare_models.py             # The trace classifier against other models; plot_leaderboard.py, plot_comparison.py draw it
+│   ├── compare_versions.py           # Two versions of the debugger on the same scripts; plot_versions.py draws it
 │   ├── snippets/                     # Code fragments for `snippet`
 │   ├── benchmark_hooks.py            # Module 1 overhead benchmark
 │   └── evaluate_pipeline.py          # Repair rate and damage rate on the benchmarks
-└── tests/                            # 472 automated tests (pytest)
+└── tests/                            # 475 automated tests (pytest)
 ```
 
 ---

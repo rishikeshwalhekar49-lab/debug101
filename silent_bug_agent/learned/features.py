@@ -33,10 +33,22 @@ FEATURES: List[str] = [
     "log_input_scale",  # mean |input| (log10)
     "log_input_std",
     "no_grad_forwards",  # share of forward passes under no_grad (validation)
-    "no_grad_training_mode",  # share of those that ran with the model still in training mode
+    "eval_missing_where_it_matters",  # share of those in training mode, counted only if the model has dropout/BN
+    "has_mode_layers",  # the model has dropout or batch norm, so train() and eval() behave differently
+    "outside_optimizer",  # share of the model's trainable parameters that no optimizer updates
     "bias_mean",  # mean bias value, squashed to -1..1
     "has_updates",
+    # from the loss-function calls; they separate the bugs whose loss "barely falls"
+    "sum_reduction",  # share of training loss calls with reduction="sum"
+    "start_vs_chance",  # log10(first training losses / the loss of guessing: ln(classes))
+    "end_vs_chance",  # log10(last training losses / that same chance level)
+    "has_chance",  # 1 for classification losses, where a chance level exists
+    "val_slope",  # slope of log(validation loss) over the run
+    "val_vs_train_end",  # log10(last validation loss / last training loss)
+    "val_end_vs_chance",  # log10(last validation loss / chance level)
+    "has_validation_loss",
 ]
+CHANCE = {"binary_cross_entropy": 0.6931, "binary_cross_entropy_with_logits": 0.6931}
 
 
 def _log10(value: Optional[float], floor: float = 1e-12) -> float:
@@ -55,6 +67,29 @@ def _slope(values: Sequence[float]) -> float:
     mx, my = _mean(xs), _mean(values)
     var = sum((x - mx) ** 2 for x in xs)
     return sum((x - mx) * (y - my) for x, y in zip(xs, values)) / var if var else 0.0
+
+
+def _loss_features(calls: List[Dict[str, Any]]) -> Dict[str, float]:
+    finite = [c for c in calls if c.get("value") is not None and math.isfinite(c["value"]) and c["value"] > 0]
+    train = [c for c in finite if c["train"]]
+    val = [c for c in finite if not c["train"]]
+    chance_of = [math.log(c["classes"]) if c.get("classes") and c["classes"] >= 2 else CHANCE.get(c["fn"])
+                 for c in train]
+    chances = [x for x in chance_of if x]
+    chance = _mean(chances) if chances else None
+    start, end = _mean([c["value"] for c in train[:3]]), _mean([c["value"] for c in train[-3:]])
+    val_end = _mean([c["value"] for c in val[-3:]])
+    all_train = [c for c in calls if c["train"]]
+    return {
+        "sum_reduction": _mean([1.0 if c["reduction"] == "sum" else 0.0 for c in all_train]),
+        "start_vs_chance": _log10(start / chance) if chance and start else 0.0,
+        "end_vs_chance": _log10(end / chance) if chance and end else 0.0,
+        "has_chance": 1.0 if chance else 0.0,
+        "val_slope": max(-20.0, min(20.0, _slope([math.log(c["value"]) for c in val]))) if len(val) > 1 else 0.0,
+        "val_vs_train_end": _log10(val_end / end) if val and end else 0.0,
+        "val_end_vs_chance": _log10(val_end / chance) if val and chance else 0.0,
+        "has_validation_loss": 1.0 if val else 0.0,
+    }
 
 
 def vectorize(report: Dict[str, Any]) -> List[float]:
@@ -98,9 +133,13 @@ def vectorize(report: Dict[str, Any]) -> List[float]:
         "log_input_scale": _log10(trace.get("input_abs_mean")) if trace.get("input_abs_mean") else 0.0,
         "log_input_std": _log10(trace.get("input_std")) if trace.get("input_std") else 0.0,
         "no_grad_forwards": no_grad / forwards if forwards else 0.0,
-        "no_grad_training_mode": (trace.get("no_grad_training_forwards") or 0) / no_grad if no_grad else 0.0,
+        "eval_missing_where_it_matters": ((trace.get("no_grad_training_forwards") or 0) / no_grad
+                                          if no_grad and trace.get("mode_layers") else 0.0),
+        "has_mode_layers": 1.0 if trace.get("mode_layers") else 0.0,
+        "outside_optimizer": float(trace.get("outside_optimizer_fraction") or 0.0),
         "bias_mean": math.tanh(float(bias)) if bias is not None else 0.0,
         "has_updates": 1.0 if updates else 0.0,
+        **_loss_features(trace.get("loss_calls") or []),
     }
     # a diverged run can leave NaN weights (so a NaN mean bias): `loss_nonfinite` already says it diverged
     return [float(values[name]) if math.isfinite(values[name]) else 0.0 for name in FEATURES]

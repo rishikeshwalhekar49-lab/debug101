@@ -121,17 +121,24 @@ def _model(spec: Spec) -> List[str]:
     return lines + ["        return self.out(x)", "", "model = Net()"]
 
 
+def skips_mode_switch(spec: Spec) -> bool:
+    """Without dropout or batch norm, train() and eval() change nothing, and real code often leaves them out."""
+    return not spec.dropout and not spec.batchnorm and spec.data_seed % 2 == 0
+
+
 def _loop(spec: Spec) -> List[str]:
+    train_mode = [] if skips_mode_switch(spec) else ["    model.train()"]
     if spec.loader:
         lines = [f"train_loader = DataLoader(TensorDataset(x_train, y_train), batch_size={spec.batch_size}, shuffle=True)",
-                 "for epoch in range(EPOCHS):", "    model.train()", "    for xb, yb in train_loader:"]
+                 "for epoch in range(EPOCHS):", *train_mode, "    for xb, yb in train_loader:"]
     else:
-        lines = ["for epoch in range(EPOCHS):", "    model.train()", "    order = torch.randperm(len(x_train))",
+        lines = ["for epoch in range(EPOCHS):", *train_mode, "    order = torch.randperm(len(x_train))",
                  f"    for start in range(0, len(x_train), {spec.batch_size}):",
                  f"        batch = order[start:start + {spec.batch_size}]",
                  "        xb, yb = x_train[batch], y_train[batch]"]
     return lines + ["        optimizer.zero_grad()", "        output = model(xb)", "        loss = criterion(output, yb)",
-                    "        loss.backward()", "        optimizer.step()", "    model.eval()", "    with torch.no_grad():",
+                    "        loss.backward()", "        optimizer.step()",
+                    *([] if skips_mode_switch(spec) else ["    model.eval()"]), "    with torch.no_grad():",
                     "        val_loss = criterion(model(x_val), y_val).item()",
                     "    print(f'epoch {epoch}: train loss {loss.item():.4f}, validation loss {val_loss:.4f}')"]
 

@@ -14,6 +14,7 @@ label is exact.
 from __future__ import annotations
 
 import ast
+import hashlib
 import re
 from typing import Callable, Dict, List, Optional
 
@@ -26,6 +27,11 @@ ADAPTIVE = {"Adam", "AdamW", "RMSprop", "Adagrad", "Adamax", "NAdam", "RAdam"}
 DEAD_BIAS = -8.0
 _INPUT_NAME = re.compile(r"^(x|X|inputs?|features?|data)(_?(train|val|valid|test))?$")
 _LABEL_NAME = re.compile(r"^(y|Y|labels?|targets?)(_?train)?$")
+
+
+def _variant(source: str, count: int) -> int:
+    """Which of `count` ways to plant a bug, fixed for a given script (so datasets can be rebuilt exactly)."""
+    return int(hashlib.sha256(source.encode("utf-8")).hexdigest(), 16) % count
 
 
 def _call_name(node: ast.AST) -> str:
@@ -124,9 +130,9 @@ def softmax_before_cross_entropy(source: str) -> Optional[str]:
     if not criteria:
         return None
     model = _trained_model(tree)
-    if model and _softmax_in_model(tree, model):
+    if _variant(source, 2) == 0 and model and _softmax_in_model(tree, model):
         return _finish(tree)
-    changed = 0
+    changed = 0  # otherwise the softmax goes where the loss is called
     for node in ast.walk(tree):
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in criteria and node.args:
             node.args[0] = ast.parse(f"torch.softmax({ast.unparse(node.args[0])}, dim=1)", mode="eval").body
@@ -166,10 +172,19 @@ def learning_rate_misconfigured(source: str) -> Optional[str]:
 
 
 def frozen_layer_no_grad(source: str) -> Optional[str]:
+    """The first layer never trains: either its parameters stop requiring gradients, or the
+    optimizer is simply never given them."""
     tree = ast.parse(source)
     model = _trained_model(tree)
+    if not model:
+        return None
+    if _variant(source, 2) == 1:
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call) and _call_name(node) in OPTIMIZER_NAMES and node.args:
+                node.args[0] = ast.parse(f"list({model}.parameters())[2:]", mode="eval").body
+                return _finish(tree)
     code = f"for _p in list({model}.parameters())[:2]:\n    _p.requires_grad_(False)"
-    return _finish(tree) if model and _insert_after_assignment(tree, model, code) else None
+    return _finish(tree) if _insert_after_assignment(tree, model, code) else None
 
 
 def dead_relu(source: str) -> Optional[str]:

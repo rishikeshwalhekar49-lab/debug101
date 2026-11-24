@@ -1,0 +1,1853 @@
+{
+  "old": "/private/tmp/claude-501/-Users-rishig-Library-Application-Support-Claude-scratch-workspaces-7de31195-e742-470f-a4bb-878071b93f85-6dacc955-e40a-4752-917d-bcb4a4c1c7a3-scratch-2026-10-05-b8ffd9/bc0690a4-2cc0-4bde-ae6e-03f8039ef73d/scratchpad/shreyas",
+  "new": "/Users/rishig/Library/Application Support/Claude/scratch-workspaces/7de31195-e742-470f-a4bb-878071b93f85/6dacc955-e40a-4752-917d-bcb4a4c1c7a3/scratch-2026-10-05-b8ffd9/AgenticDLDebugger",
+  "rows": [
+    {
+      "name": "benchmark_01_missing_zero_grad",
+      "label": "missing_zero_grad",
+      "set": "benchmarks",
+      "old": {
+        "seconds": 76.37,
+        "outcome": "fixed",
+        "top_cause": "missing_zero_grad",
+        "patched": true,
+        "fixed_bug": "missing_zero_grad"
+      },
+      "new": {
+        "seconds": 35.48,
+        "outcome": "fixed",
+        "top_cause": "missing_zero_grad",
+        "patched": true,
+        "fixed_bug": "missing_zero_grad"
+      }
+    },
+    {
+      "name": "benchmark_01_missing_zero_grad (healthy)",
+      "label": "clean",
+      "set": "benchmarks",
+      "old": {
+        "seconds": 8.66,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "patched": false,
+        "fixed_bug": null
+      },
+      "new": {
+        "seconds": 9.01,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "patched": false,
+        "fixed_bug": null
+      }
+    },
+    {
+      "name": "benchmark_02_train_eval_mode",
+      "label": "train_eval_mode_mismatch",
+      "set": "benchmarks",
+      "old": {
+        "seconds": 76.42,
+        "outcome": "fixed",
+        "top_cause": "train_eval_mode_mismatch",
+        "patched": true,
+        "fixed_bug": "train_eval_mode_mismatch"
+      },
+      "new": {
+        "seconds": 29.7,
+        "outcome": "fixed",
+        "top_cause": "train_eval_mode_mismatch",
+        "patched": true,
+        "fixed_bug": "train_eval_mode_mismatch"
+      }
+    },
+    {
+      "name": "benchmark_02_train_eval_mode (healthy)",
+      "label": "clean",
+      "set": "benchmarks",
+      "old": {
+        "seconds": 8.57,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "patched": false,
+        "fixed_bug": null
+      },
+      "new": {
+        "seconds": 8.96,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "patched": false,
+        "fixed_bug": null
+      }
+    },
+    {
+      "name": "benchmark_03_frozen_layer",
+      "label": "frozen_layer_no_grad",
+      "set": "benchmarks",
+      "old": {
+        "seconds": 84.27,
+        "outcome": "fixed",
+        "top_cause": "frozen_layer_no_grad",
+        "patched": true,
+        "fixed_bug": "frozen_layer_no_grad"
+      },
+      "new": {
+        "seconds": 25.86,
+        "outcome": "fixed",
+        "top_cause": "frozen_layer_no_grad",
+        "patched": true,
+        "fixed_bug": "frozen_layer_no_grad"
+      }
+    },
+    {
+      "name": "benchmark_03_frozen_layer (healthy)",
+      "label": "clean",
+      "set": "benchmarks",
+      "old": {
+        "seconds": 10.25,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "patched": false,
+        "fixed_bug": null
+      },
+      "new": {
+        "seconds": 9.57,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "patched": false,
+        "fixed_bug": null
+      }
+    },
+    {
+      "name": "benchmark_04_softmax_before_crossentropy",
+      "label": "softmax_before_cross_entropy",
+      "set": "benchmarks",
+      "old": {
+        "seconds": 79.23,
+        "outcome": "fixed",
+        "top_cause": "softmax_before_cross_entropy",
+        "patched": true,
+        "fixed_bug": "softmax_before_cross_entropy"
+      },
+      "new": {
+        "seconds": 33.28,
+        "outcome": "fixed",
+        "top_cause": "softmax_before_cross_entropy",
+        "patched": true,
+        "fixed_bug": "softmax_before_cross_entropy"
+      }
+    },
+    {
+      "name": "benchmark_04_softmax_before_crossentropy (healthy)",
+      "label": "clean",
+      "set": "benchmarks",
+      "old": {
+        "seconds": 79.38,
+        "outcome": "fixed",
+        "top_cause": "softmax_before_cross_entropy",
+        "patched": true,
+        "fixed_bug": "softmax_before_cross_entropy"
+      },
+      "new": {
+        "seconds": 38.63,
+        "outcome": "fixed",
+        "top_cause": "softmax_before_cross_entropy",
+        "patched": true,
+        "fixed_bug": "softmax_before_cross_entropy"
+      }
+    },
+    {
+      "name": "benchmark_05_learning_rate_too_high",
+      "label": "learning_rate_misconfigured",
+      "set": "benchmarks",
+      "old": {
+        "seconds": 83.71,
+        "outcome": "fixed",
+        "top_cause": "learning_rate_misconfigured",
+        "patched": true,
+        "fixed_bug": "learning_rate_misconfigured"
+      },
+      "new": {
+        "seconds": 31.18,
+        "outcome": "fixed",
+        "top_cause": "learning_rate_misconfigured",
+        "patched": true,
+        "fixed_bug": "learning_rate_misconfigured"
+      }
+    },
+    {
+      "name": "benchmark_05_learning_rate_too_high (healthy)",
+      "label": "clean",
+      "set": "benchmarks",
+      "old": {
+        "seconds": 12.74,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "patched": false,
+        "fixed_bug": null
+      },
+      "new": {
+        "seconds": 13.4,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "patched": false,
+        "fixed_bug": null
+      }
+    },
+    {
+      "name": "benchmark_06_dead_relu",
+      "label": "dead_relu",
+      "set": "benchmarks",
+      "old": {
+        "seconds": 86.36,
+        "outcome": "fixed",
+        "top_cause": "dead_relu",
+        "patched": true,
+        "fixed_bug": "dead_relu"
+      },
+      "new": {
+        "seconds": 26.43,
+        "outcome": "fixed",
+        "top_cause": "dead_relu",
+        "patched": true,
+        "fixed_bug": "dead_relu"
+      }
+    },
+    {
+      "name": "benchmark_06_dead_relu (healthy)",
+      "label": "clean",
+      "set": "benchmarks",
+      "old": {
+        "seconds": 11.58,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "patched": false,
+        "fixed_bug": null
+      },
+      "new": {
+        "seconds": 10.23,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "patched": false,
+        "fixed_bug": null
+      }
+    },
+    {
+      "name": "benchmark_07_wrong_loss_reduction",
+      "label": "wrong_loss_reduction",
+      "set": "benchmarks",
+      "old": {
+        "seconds": 125.93,
+        "outcome": "fixed",
+        "top_cause": "wrong_loss_reduction",
+        "patched": true,
+        "fixed_bug": "learning_rate_misconfigured"
+      },
+      "new": {
+        "seconds": 53.99,
+        "outcome": "fixed",
+        "top_cause": "wrong_loss_reduction",
+        "patched": true,
+        "fixed_bug": "learning_rate_misconfigured"
+      }
+    },
+    {
+      "name": "benchmark_07_wrong_loss_reduction (healthy)",
+      "label": "clean",
+      "set": "benchmarks",
+      "old": {
+        "seconds": 9.51,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "patched": false,
+        "fixed_bug": null
+      },
+      "new": {
+        "seconds": 9.95,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "patched": false,
+        "fixed_bug": null
+      }
+    },
+    {
+      "name": "benchmark_08_unnormalized_inputs",
+      "label": "non_normalized_inputs",
+      "set": "benchmarks",
+      "old": {
+        "seconds": 82.94,
+        "outcome": "fixed",
+        "top_cause": "non_normalized_inputs",
+        "patched": true,
+        "fixed_bug": "non_normalized_inputs"
+      },
+      "new": {
+        "seconds": 27.81,
+        "outcome": "fixed",
+        "top_cause": "non_normalized_inputs",
+        "patched": true,
+        "fixed_bug": "non_normalized_inputs"
+      }
+    },
+    {
+      "name": "benchmark_08_unnormalized_inputs (healthy)",
+      "label": "clean",
+      "set": "benchmarks",
+      "old": {
+        "seconds": 9.11,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "patched": false,
+        "fixed_bug": null
+      },
+      "new": {
+        "seconds": 9.67,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "patched": false,
+        "fixed_bug": null
+      }
+    },
+    {
+      "name": "benchmark_09_lr_scheduler_step_order",
+      "label": "lr_scheduler_step_order_bug",
+      "set": "benchmarks",
+      "old": {
+        "seconds": 9.58,
+        "outcome": "not_fixed",
+        "top_cause": "lr_scheduler_step_order_bug",
+        "patched": false,
+        "fixed_bug": null
+      },
+      "new": {
+        "seconds": 12.96,
+        "outcome": "not_fixed",
+        "top_cause": "lr_scheduler_step_order_bug",
+        "patched": false,
+        "fixed_bug": null
+      }
+    },
+    {
+      "name": "benchmark_10_gradient_accumulation_miscount",
+      "label": "gradient_accumulation_miscount",
+      "set": "benchmarks",
+      "old": {
+        "seconds": 11.7,
+        "outcome": "not_fixed",
+        "top_cause": "gradient_accumulation_miscount",
+        "patched": false,
+        "fixed_bug": null
+      },
+      "new": {
+        "seconds": 12.2,
+        "outcome": "not_fixed",
+        "top_cause": "gradient_accumulation_miscount",
+        "patched": false,
+        "fixed_bug": null
+      }
+    },
+    {
+      "name": "benchmark_10_gradient_accumulation_miscount (healthy)",
+      "label": "clean",
+      "set": "benchmarks",
+      "old": {
+        "seconds": 90.04,
+        "outcome": "not_fixed",
+        "top_cause": "missing_zero_grad",
+        "patched": false,
+        "fixed_bug": null
+      },
+      "new": {
+        "seconds": 34.43,
+        "outcome": "not_fixed",
+        "top_cause": "missing_zero_grad",
+        "patched": false,
+        "fixed_bug": null
+      }
+    },
+    {
+      "name": "benchmark_11_duplicate_augmentation",
+      "label": "duplicate_augmentation_applied_twice",
+      "set": "benchmarks",
+      "old": {
+        "seconds": 11.66,
+        "outcome": "not_fixed",
+        "top_cause": "duplicate_augmentation_applied_twice",
+        "patched": false,
+        "fixed_bug": null
+      },
+      "new": {
+        "seconds": 11.06,
+        "outcome": "not_fixed",
+        "top_cause": "duplicate_augmentation_applied_twice",
+        "patched": false,
+        "fixed_bug": null
+      }
+    },
+    {
+      "name": "benchmark_11_duplicate_augmentation (healthy)",
+      "label": "clean",
+      "set": "benchmarks",
+      "old": {
+        "seconds": 10.15,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "patched": false,
+        "fixed_bug": null
+      },
+      "new": {
+        "seconds": 10.54,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "patched": false,
+        "fixed_bug": null
+      }
+    },
+    {
+      "name": "benchmark_12_silent_device_fallback",
+      "label": "silent_device_fallback",
+      "set": "benchmarks",
+      "old": {
+        "seconds": 9.22,
+        "outcome": "not_fixed",
+        "top_cause": "silent_device_fallback",
+        "patched": false,
+        "fixed_bug": null
+      },
+      "new": {
+        "seconds": 10.38,
+        "outcome": "not_fixed",
+        "top_cause": "silent_device_fallback",
+        "patched": false,
+        "fixed_bug": null
+      }
+    },
+    {
+      "name": "benchmark_12_silent_device_fallback (healthy)",
+      "label": "clean",
+      "set": "benchmarks",
+      "old": {
+        "seconds": 9.5,
+        "outcome": "not_fixed",
+        "top_cause": "silent_device_fallback",
+        "patched": false,
+        "fixed_bug": null
+      },
+      "new": {
+        "seconds": 10.08,
+        "outcome": "not_fixed",
+        "top_cause": "silent_device_fallback",
+        "patched": false,
+        "fixed_bug": null
+      }
+    },
+    {
+      "name": "benchmark_13_optimizer_state_leak_across_folds",
+      "label": "optimizer_state_leak_across_folds",
+      "set": "benchmarks",
+      "old": {
+        "seconds": 9.23,
+        "outcome": "not_fixed",
+        "top_cause": "optimizer_state_leak_across_folds",
+        "patched": false,
+        "fixed_bug": null
+      },
+      "new": {
+        "seconds": 10.35,
+        "outcome": "not_fixed",
+        "top_cause": "optimizer_state_leak_across_folds",
+        "patched": false,
+        "fixed_bug": null
+      }
+    },
+    {
+      "name": "benchmark_13_optimizer_state_leak_across_folds (healthy)",
+      "label": "clean",
+      "set": "benchmarks",
+      "old": {
+        "seconds": 15.45,
+        "outcome": "not_fixed",
+        "top_cause": "optimizer_state_leak_across_folds",
+        "patched": false,
+        "fixed_bug": null
+      },
+      "new": {
+        "seconds": 17.66,
+        "outcome": "not_fixed",
+        "top_cause": "optimizer_state_leak_across_folds",
+        "patched": false,
+        "fixed_bug": null
+      }
+    },
+    {
+      "name": "benchmark_14_label_data_misalignment",
+      "label": "label_data_misalignment",
+      "set": "benchmarks",
+      "old": {
+        "seconds": 9.11,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "patched": false,
+        "fixed_bug": null
+      },
+      "new": {
+        "seconds": 10.64,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "patched": false,
+        "fixed_bug": null
+      }
+    },
+    {
+      "name": "benchmark_14_label_data_misalignment (healthy)",
+      "label": "clean",
+      "set": "benchmarks",
+      "old": {
+        "seconds": 84.37,
+        "outcome": "not_fixed",
+        "top_cause": "learning_rate_misconfigured",
+        "patched": false,
+        "fixed_bug": null
+      },
+      "new": {
+        "seconds": 33.35,
+        "outcome": "not_fixed",
+        "top_cause": "learning_rate_misconfigured",
+        "patched": false,
+        "fixed_bug": null
+      }
+    },
+    {
+      "name": "benchmark_15_exploding_gradients",
+      "label": "exploding_gradients",
+      "set": "benchmarks",
+      "old": {
+        "seconds": 89.03,
+        "outcome": "fixed",
+        "top_cause": "learning_rate_misconfigured",
+        "patched": true,
+        "fixed_bug": "exploding_gradients"
+      },
+      "new": {
+        "seconds": 42.94,
+        "outcome": "fixed",
+        "top_cause": "learning_rate_misconfigured",
+        "patched": true,
+        "fixed_bug": "exploding_gradients"
+      }
+    },
+    {
+      "name": "benchmark_15_exploding_gradients (healthy)",
+      "label": "clean",
+      "set": "benchmarks",
+      "old": {
+        "seconds": 9.24,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "patched": false,
+        "fixed_bug": null
+      },
+      "new": {
+        "seconds": 9.8,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "patched": false,
+        "fixed_bug": null
+      }
+    },
+    {
+      "name": "benchmark_16_vanishing_gradients",
+      "label": "vanishing_gradients",
+      "set": "benchmarks",
+      "old": {
+        "seconds": 21.09,
+        "outcome": "not_fixed",
+        "top_cause": "vanishing_gradients",
+        "patched": false,
+        "fixed_bug": null
+      },
+      "new": {
+        "seconds": 18.81,
+        "outcome": "not_fixed",
+        "top_cause": "vanishing_gradients",
+        "patched": false,
+        "fixed_bug": null
+      }
+    },
+    {
+      "name": "benchmark_16_vanishing_gradients (healthy)",
+      "label": "clean",
+      "set": "benchmarks",
+      "old": {
+        "seconds": 91.57,
+        "outcome": "fixed",
+        "top_cause": "dead_relu",
+        "patched": true,
+        "fixed_bug": "dead_relu"
+      },
+      "new": {
+        "seconds": 35.45,
+        "outcome": "fixed",
+        "top_cause": "dead_relu",
+        "patched": true,
+        "fixed_bug": "dead_relu"
+      }
+    },
+    {
+      "name": "benchmark_17_mismatched_loss_task",
+      "label": "mismatched_loss_task",
+      "set": "benchmarks",
+      "old": {
+        "seconds": 11.85,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "patched": false,
+        "fixed_bug": null
+      },
+      "new": {
+        "seconds": 12.46,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "patched": false,
+        "fixed_bug": null
+      }
+    },
+    {
+      "name": "benchmark_17_mismatched_loss_task (healthy)",
+      "label": "clean",
+      "set": "benchmarks",
+      "old": {
+        "seconds": 9.51,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "patched": false,
+        "fixed_bug": null
+      },
+      "new": {
+        "seconds": 10.76,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "patched": false,
+        "fixed_bug": null
+      }
+    },
+    {
+      "name": "benchmark_18_data_leakage_train_test",
+      "label": "data_leakage_train_test",
+      "set": "benchmarks",
+      "old": {
+        "seconds": 9.37,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "patched": false,
+        "fixed_bug": null
+      },
+      "new": {
+        "seconds": 10.7,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "patched": false,
+        "fixed_bug": null
+      }
+    },
+    {
+      "name": "benchmark_18_data_leakage_train_test (healthy)",
+      "label": "clean",
+      "set": "benchmarks",
+      "old": {
+        "seconds": 9.38,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "patched": false,
+        "fixed_bug": null
+      },
+      "new": {
+        "seconds": 11.0,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "patched": false,
+        "fixed_bug": null
+      }
+    },
+    {
+      "name": "holdout_05_trainer_class (clean)",
+      "label": "clean",
+      "set": "hand-written test",
+      "old": {
+        "seconds": 9.54,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "patched": false,
+        "fixed_bug": null
+      },
+      "new": {
+        "seconds": 11.27,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "patched": false,
+        "fixed_bug": null
+      }
+    },
+    {
+      "name": "holdout_05_trainer_class (clean)",
+      "label": "clean",
+      "set": "hand-written test",
+      "old": {
+        "seconds": 11.41,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "patched": false,
+        "fixed_bug": null
+      },
+      "new": {
+        "seconds": 13.05,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "patched": false,
+        "fixed_bug": null
+      }
+    },
+    {
+      "name": "holdout_05_trainer_class (missing_zero_grad)",
+      "label": "missing_zero_grad",
+      "set": "hand-written test",
+      "old": {
+        "seconds": 99.55,
+        "outcome": "fixed",
+        "top_cause": "missing_zero_grad",
+        "patched": true,
+        "fixed_bug": "missing_zero_grad"
+      },
+      "new": {
+        "seconds": 47.59,
+        "outcome": "fixed",
+        "top_cause": "missing_zero_grad",
+        "patched": true,
+        "fixed_bug": "missing_zero_grad"
+      }
+    },
+    {
+      "name": "holdout_05_trainer_class (train_eval_mode_mismatch)",
+      "label": "train_eval_mode_mismatch",
+      "set": "hand-written test",
+      "old": {
+        "seconds": 10.06,
+        "outcome": "not_fixed",
+        "top_cause": "train_eval_mode_mismatch",
+        "patched": false,
+        "fixed_bug": null
+      },
+      "new": {
+        "seconds": 10.34,
+        "outcome": "not_fixed",
+        "top_cause": "train_eval_mode_mismatch",
+        "patched": false,
+        "fixed_bug": null
+      }
+    },
+    {
+      "name": "holdout_05_trainer_class (softmax_before_cross_entropy)",
+      "label": "softmax_before_cross_entropy",
+      "set": "hand-written test",
+      "old": {
+        "seconds": 105.88,
+        "outcome": "fixed",
+        "top_cause": "softmax_before_cross_entropy",
+        "patched": true,
+        "fixed_bug": "softmax_before_cross_entropy"
+      },
+      "new": {
+        "seconds": 42.02,
+        "outcome": "fixed",
+        "top_cause": "softmax_before_cross_entropy",
+        "patched": true,
+        "fixed_bug": "softmax_before_cross_entropy"
+      }
+    },
+    {
+      "name": "holdout_05_trainer_class (wrong_loss_reduction)",
+      "label": "wrong_loss_reduction",
+      "set": "hand-written test",
+      "old": {
+        "seconds": 118.41,
+        "outcome": "not_fixed",
+        "top_cause": "wrong_loss_reduction",
+        "patched": false,
+        "fixed_bug": null
+      },
+      "new": {
+        "seconds": 52.08,
+        "outcome": "not_fixed",
+        "top_cause": "wrong_loss_reduction",
+        "patched": false,
+        "fixed_bug": null
+      }
+    },
+    {
+      "name": "holdout_05_trainer_class (learning_rate_misconfigured)",
+      "label": "learning_rate_misconfigured",
+      "set": "hand-written test",
+      "old": {
+        "seconds": 22.23,
+        "outcome": "not_fixed",
+        "top_cause": "dead_relu",
+        "patched": false,
+        "fixed_bug": null
+      },
+      "new": {
+        "seconds": 18.93,
+        "outcome": "not_fixed",
+        "top_cause": "dead_relu",
+        "patched": false,
+        "fixed_bug": null
+      }
+    },
+    {
+      "name": "holdout_05_trainer_class (frozen_layer_no_grad)",
+      "label": "frozen_layer_no_grad",
+      "set": "hand-written test",
+      "old": {
+        "seconds": 15.94,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "patched": false,
+        "fixed_bug": null
+      },
+      "new": {
+        "seconds": 18.69,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "patched": false,
+        "fixed_bug": null
+      }
+    },
+    {
+      "name": "holdout_05_trainer_class (non_normalized_inputs)",
+      "label": "non_normalized_inputs",
+      "set": "hand-written test",
+      "old": {
+        "seconds": 19.0,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "patched": false,
+        "fixed_bug": null
+      },
+      "new": {
+        "seconds": 16.28,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "patched": false,
+        "fixed_bug": null
+      }
+    },
+    {
+      "name": "holdout_05_trainer_class (label_data_misalignment)",
+      "label": "label_data_misalignment",
+      "set": "hand-written test",
+      "old": {
+        "seconds": 15.62,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "patched": false,
+        "fixed_bug": null
+      },
+      "new": {
+        "seconds": 13.82,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "patched": false,
+        "fixed_bug": null
+      }
+    },
+    {
+      "name": "holdout_06_binary_logits (clean)",
+      "label": "clean",
+      "set": "hand-written test",
+      "old": {
+        "seconds": 13.51,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "patched": false,
+        "fixed_bug": null
+      },
+      "new": {
+        "seconds": 14.65,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "patched": false,
+        "fixed_bug": null
+      }
+    },
+    {
+      "name": "holdout_06_binary_logits (clean)",
+      "label": "clean",
+      "set": "hand-written test",
+      "old": {
+        "seconds": 13.66,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "patched": false,
+        "fixed_bug": null
+      },
+      "new": {
+        "seconds": 14.57,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "patched": false,
+        "fixed_bug": null
+      }
+    },
+    {
+      "name": "holdout_06_binary_logits (missing_zero_grad)",
+      "label": "missing_zero_grad",
+      "set": "hand-written test",
+      "old": {
+        "seconds": 107.28,
+        "outcome": "fixed",
+        "top_cause": "missing_zero_grad",
+        "patched": true,
+        "fixed_bug": "missing_zero_grad"
+      },
+      "new": {
+        "seconds": 48.32,
+        "outcome": "fixed",
+        "top_cause": "missing_zero_grad",
+        "patched": true,
+        "fixed_bug": "missing_zero_grad"
+      }
+    },
+    {
+      "name": "holdout_06_binary_logits (wrong_loss_reduction)",
+      "label": "wrong_loss_reduction",
+      "set": "hand-written test",
+      "old": {
+        "seconds": 115.43,
+        "outcome": "fixed",
+        "top_cause": "dead_relu",
+        "patched": true,
+        "fixed_bug": "dead_relu"
+      },
+      "new": {
+        "seconds": 61.49,
+        "outcome": "fixed",
+        "top_cause": "dead_relu",
+        "patched": true,
+        "fixed_bug": "dead_relu"
+      }
+    },
+    {
+      "name": "holdout_06_binary_logits (learning_rate_misconfigured)",
+      "label": "learning_rate_misconfigured",
+      "set": "hand-written test",
+      "old": {
+        "seconds": 27.74,
+        "outcome": "not_fixed",
+        "top_cause": "dead_relu",
+        "patched": false,
+        "fixed_bug": null
+      },
+      "new": {
+        "seconds": 25.21,
+        "outcome": "not_fixed",
+        "top_cause": "dead_relu",
+        "patched": false,
+        "fixed_bug": null
+      }
+    },
+    {
+      "name": "holdout_06_binary_logits (frozen_layer_no_grad)",
+      "label": "frozen_layer_no_grad",
+      "set": "hand-written test",
+      "old": {
+        "seconds": 19.87,
+        "outcome": "not_fixed",
+        "top_cause": "frozen_layer_no_grad",
+        "patched": false,
+        "fixed_bug": null
+      },
+      "new": {
+        "seconds": 19.35,
+        "outcome": "not_fixed",
+        "top_cause": "frozen_layer_no_grad",
+        "patched": false,
+        "fixed_bug": null
+      }
+    },
+    {
+      "name": "holdout_06_binary_logits (dead_relu)",
+      "label": "dead_relu",
+      "set": "hand-written test",
+      "old": {
+        "seconds": 124.88,
+        "outcome": "fixed",
+        "top_cause": "dead_relu",
+        "patched": true,
+        "fixed_bug": "dead_relu"
+      },
+      "new": {
+        "seconds": 47.94,
+        "outcome": "fixed",
+        "top_cause": "dead_relu",
+        "patched": true,
+        "fixed_bug": "dead_relu"
+      }
+    },
+    {
+      "name": "holdout_06_binary_logits (non_normalized_inputs)",
+      "label": "non_normalized_inputs",
+      "set": "hand-written test",
+      "old": {
+        "seconds": 125.73,
+        "outcome": "not_fixed",
+        "top_cause": "frozen_layer_no_grad",
+        "patched": false,
+        "fixed_bug": null
+      },
+      "new": {
+        "seconds": 46.21,
+        "outcome": "not_fixed",
+        "top_cause": "frozen_layer_no_grad",
+        "patched": false,
+        "fixed_bug": null
+      }
+    },
+    {
+      "name": "holdout_06_binary_logits (label_data_misalignment)",
+      "label": "label_data_misalignment",
+      "set": "hand-written test",
+      "old": {
+        "seconds": 19.86,
+        "outcome": "not_fixed",
+        "top_cause": "learning_rate_misconfigured",
+        "patched": false,
+        "fixed_bug": null
+      },
+      "new": {
+        "seconds": 19.47,
+        "outcome": "not_fixed",
+        "top_cause": "learning_rate_misconfigured",
+        "patched": false,
+        "fixed_bug": null
+      }
+    },
+    {
+      "name": "holdout_07_autoencoder (clean)",
+      "label": "clean",
+      "set": "hand-written test",
+      "old": {
+        "seconds": 12.21,
+        "outcome": "not_fixed",
+        "top_cause": "optimizer_state_leak_across_folds",
+        "patched": false,
+        "fixed_bug": null
+      },
+      "new": {
+        "seconds": 14.65,
+        "outcome": "not_fixed",
+        "top_cause": "optimizer_state_leak_across_folds",
+        "patched": false,
+        "fixed_bug": null
+      }
+    },
+    {
+      "name": "holdout_07_autoencoder (clean)",
+      "label": "clean",
+      "set": "hand-written test",
+      "old": {
+        "seconds": 16.9,
+        "outcome": "not_fixed",
+        "top_cause": "optimizer_state_leak_across_folds",
+        "patched": false,
+        "fixed_bug": null
+      },
+      "new": {
+        "seconds": 17.26,
+        "outcome": "not_fixed",
+        "top_cause": "optimizer_state_leak_across_folds",
+        "patched": false,
+        "fixed_bug": null
+      }
+    },
+    {
+      "name": "holdout_07_autoencoder (missing_zero_grad)",
+      "label": "missing_zero_grad",
+      "set": "hand-written test",
+      "old": {
+        "seconds": 114.76,
+        "outcome": "fixed",
+        "top_cause": "missing_zero_grad",
+        "patched": true,
+        "fixed_bug": "missing_zero_grad"
+      },
+      "new": {
+        "seconds": 56.66,
+        "outcome": "fixed",
+        "top_cause": "missing_zero_grad",
+        "patched": true,
+        "fixed_bug": "missing_zero_grad"
+      }
+    },
+    {
+      "name": "holdout_07_autoencoder (wrong_loss_reduction)",
+      "label": "wrong_loss_reduction",
+      "set": "hand-written test",
+      "old": {
+        "seconds": 113.36,
+        "outcome": "not_fixed",
+        "top_cause": "optimizer_state_leak_across_folds",
+        "patched": false,
+        "fixed_bug": null
+      },
+      "new": {
+        "seconds": 58.02,
+        "outcome": "not_fixed",
+        "top_cause": "optimizer_state_leak_across_folds",
+        "patched": false,
+        "fixed_bug": null
+      }
+    },
+    {
+      "name": "holdout_07_autoencoder (learning_rate_misconfigured)",
+      "label": "learning_rate_misconfigured",
+      "set": "hand-written test",
+      "old": {
+        "seconds": 178.34,
+        "outcome": "not_fixed",
+        "top_cause": "dead_relu",
+        "patched": false,
+        "fixed_bug": null
+      },
+      "new": {
+        "seconds": 63.15,
+        "outcome": "fixed",
+        "top_cause": "dead_relu",
+        "patched": true,
+        "fixed_bug": "dead_relu"
+      }
+    },
+    {
+      "name": "holdout_07_autoencoder (frozen_layer_no_grad)",
+      "label": "frozen_layer_no_grad",
+      "set": "hand-written test",
+      "old": {
+        "seconds": 128.08,
+        "outcome": "fixed",
+        "top_cause": "frozen_layer_no_grad",
+        "patched": true,
+        "fixed_bug": "frozen_layer_no_grad"
+      },
+      "new": {
+        "seconds": 29.49,
+        "outcome": "fixed",
+        "top_cause": "frozen_layer_no_grad",
+        "patched": true,
+        "fixed_bug": "frozen_layer_no_grad"
+      }
+    },
+    {
+      "name": "holdout_07_autoencoder (dead_relu)",
+      "label": "dead_relu",
+      "set": "hand-written test",
+      "old": {
+        "seconds": 125.57,
+        "outcome": "fixed",
+        "top_cause": "dead_relu",
+        "patched": true,
+        "fixed_bug": "dead_relu"
+      },
+      "new": {
+        "seconds": 29.61,
+        "outcome": "fixed",
+        "top_cause": "dead_relu",
+        "patched": true,
+        "fixed_bug": "dead_relu"
+      }
+    },
+    {
+      "name": "holdout_07_autoencoder (non_normalized_inputs)",
+      "label": "non_normalized_inputs",
+      "set": "hand-written test",
+      "old": {
+        "seconds": 83.18,
+        "outcome": "fixed",
+        "top_cause": "exploding_gradients",
+        "patched": true,
+        "fixed_bug": "exploding_gradients"
+      },
+      "new": {
+        "seconds": 30.48,
+        "outcome": "fixed",
+        "top_cause": "exploding_gradients",
+        "patched": true,
+        "fixed_bug": "exploding_gradients"
+      }
+    },
+    {
+      "name": "holdout_08_gru_sequences (clean)",
+      "label": "clean",
+      "set": "hand-written test",
+      "old": {
+        "seconds": 8.89,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "patched": false,
+        "fixed_bug": null
+      },
+      "new": {
+        "seconds": 9.89,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "patched": false,
+        "fixed_bug": null
+      }
+    },
+    {
+      "name": "holdout_08_gru_sequences (clean)",
+      "label": "clean",
+      "set": "hand-written test",
+      "old": {
+        "seconds": 9.15,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "patched": false,
+        "fixed_bug": null
+      },
+      "new": {
+        "seconds": 10.01,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "patched": false,
+        "fixed_bug": null
+      }
+    },
+    {
+      "name": "holdout_08_gru_sequences (missing_zero_grad)",
+      "label": "missing_zero_grad",
+      "set": "hand-written test",
+      "old": {
+        "seconds": 80.62,
+        "outcome": "fixed",
+        "top_cause": "missing_zero_grad",
+        "patched": true,
+        "fixed_bug": "missing_zero_grad"
+      },
+      "new": {
+        "seconds": 29.41,
+        "outcome": "fixed",
+        "top_cause": "missing_zero_grad",
+        "patched": true,
+        "fixed_bug": "missing_zero_grad"
+      }
+    },
+    {
+      "name": "holdout_08_gru_sequences (train_eval_mode_mismatch)",
+      "label": "train_eval_mode_mismatch",
+      "set": "hand-written test",
+      "old": {
+        "seconds": 80.47,
+        "outcome": "not_fixed",
+        "top_cause": "train_eval_mode_mismatch",
+        "patched": false,
+        "fixed_bug": null
+      },
+      "new": {
+        "seconds": 36.05,
+        "outcome": "not_fixed",
+        "top_cause": "train_eval_mode_mismatch",
+        "patched": false,
+        "fixed_bug": null
+      }
+    },
+    {
+      "name": "holdout_08_gru_sequences (softmax_before_cross_entropy)",
+      "label": "softmax_before_cross_entropy",
+      "set": "hand-written test",
+      "old": {
+        "seconds": 85.36,
+        "outcome": "fixed",
+        "top_cause": "softmax_before_cross_entropy",
+        "patched": true,
+        "fixed_bug": "softmax_before_cross_entropy"
+      },
+      "new": {
+        "seconds": 25.86,
+        "outcome": "fixed",
+        "top_cause": "softmax_before_cross_entropy",
+        "patched": true,
+        "fixed_bug": "softmax_before_cross_entropy"
+      }
+    },
+    {
+      "name": "holdout_08_gru_sequences (wrong_loss_reduction)",
+      "label": "wrong_loss_reduction",
+      "set": "hand-written test",
+      "old": {
+        "seconds": 81.89,
+        "outcome": "fixed",
+        "top_cause": "wrong_loss_reduction",
+        "patched": true,
+        "fixed_bug": "wrong_loss_reduction"
+      },
+      "new": {
+        "seconds": 36.65,
+        "outcome": "fixed",
+        "top_cause": "wrong_loss_reduction",
+        "patched": true,
+        "fixed_bug": "wrong_loss_reduction"
+      }
+    },
+    {
+      "name": "holdout_08_gru_sequences (learning_rate_misconfigured)",
+      "label": "learning_rate_misconfigured",
+      "set": "hand-written test",
+      "old": {
+        "seconds": 80.4,
+        "outcome": "fixed",
+        "top_cause": "learning_rate_misconfigured",
+        "patched": true,
+        "fixed_bug": "learning_rate_misconfigured"
+      },
+      "new": {
+        "seconds": 32.13,
+        "outcome": "fixed",
+        "top_cause": "learning_rate_misconfigured",
+        "patched": true,
+        "fixed_bug": "learning_rate_misconfigured"
+      }
+    },
+    {
+      "name": "holdout_08_gru_sequences (frozen_layer_no_grad)",
+      "label": "frozen_layer_no_grad",
+      "set": "hand-written test",
+      "old": {
+        "seconds": 89.9,
+        "outcome": "fixed",
+        "top_cause": "frozen_layer_no_grad",
+        "patched": true,
+        "fixed_bug": "frozen_layer_no_grad"
+      },
+      "new": {
+        "seconds": 29.75,
+        "outcome": "fixed",
+        "top_cause": "frozen_layer_no_grad",
+        "patched": true,
+        "fixed_bug": "frozen_layer_no_grad"
+      }
+    },
+    {
+      "name": "holdout_08_gru_sequences (non_normalized_inputs)",
+      "label": "non_normalized_inputs",
+      "set": "hand-written test",
+      "old": {
+        "seconds": 9.77,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "patched": false,
+        "fixed_bug": null
+      },
+      "new": {
+        "seconds": 11.02,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "patched": false,
+        "fixed_bug": null
+      }
+    },
+    {
+      "name": "holdout_08_gru_sequences (label_data_misalignment)",
+      "label": "label_data_misalignment",
+      "set": "hand-written test",
+      "old": {
+        "seconds": 9.6,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "patched": false,
+        "fixed_bug": null
+      },
+      "new": {
+        "seconds": 11.1,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "patched": false,
+        "fixed_bug": null
+      }
+    },
+    {
+      "name": "holdout_09_functional_tensors (clean)",
+      "label": "clean",
+      "set": "hand-written test",
+      "old": {
+        "seconds": 91.0,
+        "outcome": "fixed",
+        "top_cause": "missing_zero_grad",
+        "patched": true,
+        "fixed_bug": "missing_zero_grad"
+      },
+      "new": {
+        "seconds": 43.7,
+        "outcome": "fixed",
+        "top_cause": "missing_zero_grad",
+        "patched": true,
+        "fixed_bug": "missing_zero_grad"
+      }
+    },
+    {
+      "name": "holdout_09_functional_tensors (clean)",
+      "label": "clean",
+      "set": "hand-written test",
+      "old": {
+        "seconds": 90.96,
+        "outcome": "fixed",
+        "top_cause": "missing_zero_grad",
+        "patched": true,
+        "fixed_bug": "missing_zero_grad"
+      },
+      "new": {
+        "seconds": 44.48,
+        "outcome": "fixed",
+        "top_cause": "missing_zero_grad",
+        "patched": true,
+        "fixed_bug": "missing_zero_grad"
+      }
+    },
+    {
+      "name": "holdout_09_functional_tensors (missing_zero_grad)",
+      "label": "missing_zero_grad",
+      "set": "hand-written test",
+      "old": {
+        "seconds": 101.6,
+        "outcome": "fixed",
+        "top_cause": "missing_zero_grad",
+        "patched": true,
+        "fixed_bug": "missing_zero_grad"
+      },
+      "new": {
+        "seconds": 38.27,
+        "outcome": "fixed",
+        "top_cause": "missing_zero_grad",
+        "patched": true,
+        "fixed_bug": "missing_zero_grad"
+      }
+    },
+    {
+      "name": "holdout_09_functional_tensors (softmax_before_cross_entropy)",
+      "label": "softmax_before_cross_entropy",
+      "set": "hand-written test",
+      "old": {
+        "seconds": 97.6,
+        "outcome": "fixed",
+        "top_cause": "missing_zero_grad",
+        "patched": true,
+        "fixed_bug": "missing_zero_grad"
+      },
+      "new": {
+        "seconds": 43.9,
+        "outcome": "fixed",
+        "top_cause": "missing_zero_grad",
+        "patched": true,
+        "fixed_bug": "missing_zero_grad"
+      }
+    },
+    {
+      "name": "holdout_09_functional_tensors (wrong_loss_reduction)",
+      "label": "wrong_loss_reduction",
+      "set": "hand-written test",
+      "old": {
+        "seconds": 96.82,
+        "outcome": "fixed",
+        "top_cause": "missing_zero_grad",
+        "patched": true,
+        "fixed_bug": "missing_zero_grad"
+      },
+      "new": {
+        "seconds": 44.85,
+        "outcome": "fixed",
+        "top_cause": "missing_zero_grad",
+        "patched": true,
+        "fixed_bug": "missing_zero_grad"
+      }
+    },
+    {
+      "name": "holdout_09_functional_tensors (learning_rate_misconfigured)",
+      "label": "learning_rate_misconfigured",
+      "set": "hand-written test",
+      "old": {
+        "seconds": 17.34,
+        "outcome": "not_fixed",
+        "top_cause": "missing_zero_grad",
+        "patched": false,
+        "fixed_bug": null
+      },
+      "new": {
+        "seconds": 16.32,
+        "outcome": "not_fixed",
+        "top_cause": "missing_zero_grad",
+        "patched": false,
+        "fixed_bug": null
+      }
+    },
+    {
+      "name": "holdout_09_functional_tensors (frozen_layer_no_grad)",
+      "label": "frozen_layer_no_grad",
+      "set": "hand-written test",
+      "old": {
+        "seconds": 104.74,
+        "outcome": "fixed",
+        "top_cause": "missing_zero_grad",
+        "patched": true,
+        "fixed_bug": "missing_zero_grad"
+      },
+      "new": {
+        "seconds": 38.89,
+        "outcome": "fixed",
+        "top_cause": "missing_zero_grad",
+        "patched": true,
+        "fixed_bug": "missing_zero_grad"
+      }
+    },
+    {
+      "name": "holdout_09_functional_tensors (dead_relu)",
+      "label": "dead_relu",
+      "set": "hand-written test",
+      "old": {
+        "seconds": 18.35,
+        "outcome": "not_fixed",
+        "top_cause": "missing_zero_grad",
+        "patched": false,
+        "fixed_bug": null
+      },
+      "new": {
+        "seconds": 17.07,
+        "outcome": "not_fixed",
+        "top_cause": "missing_zero_grad",
+        "patched": false,
+        "fixed_bug": null
+      }
+    },
+    {
+      "name": "holdout_09_functional_tensors (non_normalized_inputs)",
+      "label": "non_normalized_inputs",
+      "set": "hand-written test",
+      "old": {
+        "seconds": 100.51,
+        "outcome": "fixed",
+        "top_cause": "missing_zero_grad",
+        "patched": true,
+        "fixed_bug": "missing_zero_grad"
+      },
+      "new": {
+        "seconds": 40.19,
+        "outcome": "fixed",
+        "top_cause": "missing_zero_grad",
+        "patched": true,
+        "fixed_bug": "missing_zero_grad"
+      }
+    },
+    {
+      "name": "holdout_09_functional_tensors (label_data_misalignment)",
+      "label": "label_data_misalignment",
+      "set": "hand-written test",
+      "old": {
+        "seconds": 107.12,
+        "outcome": "fixed",
+        "top_cause": "missing_zero_grad",
+        "patched": true,
+        "fixed_bug": "missing_zero_grad"
+      },
+      "new": {
+        "seconds": 39.76,
+        "outcome": "fixed",
+        "top_cause": "missing_zero_grad",
+        "patched": true,
+        "fixed_bug": "missing_zero_grad"
+      }
+    },
+    {
+      "name": "holdout_10_param_groups (clean)",
+      "label": "clean",
+      "set": "hand-written test",
+      "old": {
+        "seconds": 11.11,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "patched": false,
+        "fixed_bug": null
+      },
+      "new": {
+        "seconds": 11.92,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "patched": false,
+        "fixed_bug": null
+      }
+    },
+    {
+      "name": "holdout_10_param_groups (clean)",
+      "label": "clean",
+      "set": "hand-written test",
+      "old": {
+        "seconds": 11.92,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "patched": false,
+        "fixed_bug": null
+      },
+      "new": {
+        "seconds": 14.83,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "patched": false,
+        "fixed_bug": null
+      }
+    },
+    {
+      "name": "holdout_10_param_groups (missing_zero_grad)",
+      "label": "missing_zero_grad",
+      "set": "hand-written test",
+      "old": {
+        "seconds": 104.55,
+        "outcome": "fixed",
+        "top_cause": "missing_zero_grad",
+        "patched": true,
+        "fixed_bug": "missing_zero_grad"
+      },
+      "new": {
+        "seconds": 33.07,
+        "outcome": "fixed",
+        "top_cause": "missing_zero_grad",
+        "patched": true,
+        "fixed_bug": "missing_zero_grad"
+      }
+    },
+    {
+      "name": "holdout_10_param_groups (train_eval_mode_mismatch)",
+      "label": "train_eval_mode_mismatch",
+      "set": "hand-written test",
+      "old": {
+        "seconds": 102.07,
+        "outcome": "not_fixed",
+        "top_cause": "train_eval_mode_mismatch",
+        "patched": false,
+        "fixed_bug": null
+      },
+      "new": {
+        "seconds": 44.44,
+        "outcome": "not_fixed",
+        "top_cause": "train_eval_mode_mismatch",
+        "patched": false,
+        "fixed_bug": null
+      }
+    },
+    {
+      "name": "holdout_10_param_groups (softmax_before_cross_entropy)",
+      "label": "softmax_before_cross_entropy",
+      "set": "hand-written test",
+      "old": {
+        "seconds": 105.82,
+        "outcome": "fixed",
+        "top_cause": "softmax_before_cross_entropy",
+        "patched": true,
+        "fixed_bug": "softmax_before_cross_entropy"
+      },
+      "new": {
+        "seconds": 34.47,
+        "outcome": "fixed",
+        "top_cause": "softmax_before_cross_entropy",
+        "patched": true,
+        "fixed_bug": "softmax_before_cross_entropy"
+      }
+    },
+    {
+      "name": "holdout_10_param_groups (wrong_loss_reduction)",
+      "label": "wrong_loss_reduction",
+      "set": "hand-written test",
+      "old": {
+        "seconds": 109.75,
+        "outcome": "not_fixed",
+        "top_cause": "wrong_loss_reduction",
+        "patched": false,
+        "fixed_bug": null
+      },
+      "new": {
+        "seconds": 40.62,
+        "outcome": "not_fixed",
+        "top_cause": "wrong_loss_reduction",
+        "patched": false,
+        "fixed_bug": null
+      }
+    },
+    {
+      "name": "holdout_10_param_groups (learning_rate_misconfigured)",
+      "label": "learning_rate_misconfigured",
+      "set": "hand-written test",
+      "old": {
+        "seconds": 159.52,
+        "outcome": "not_fixed",
+        "top_cause": "dead_relu",
+        "patched": false,
+        "fixed_bug": null
+      },
+      "new": {
+        "seconds": 71.27,
+        "outcome": "not_fixed",
+        "top_cause": "dead_relu",
+        "patched": false,
+        "fixed_bug": null
+      }
+    },
+    {
+      "name": "holdout_10_param_groups (frozen_layer_no_grad)",
+      "label": "frozen_layer_no_grad",
+      "set": "hand-written test",
+      "old": {
+        "seconds": 11.64,
+        "outcome": "not_fixed",
+        "top_cause": "frozen_layer_no_grad",
+        "patched": false,
+        "fixed_bug": null
+      },
+      "new": {
+        "seconds": 12.54,
+        "outcome": "not_fixed",
+        "top_cause": "frozen_layer_no_grad",
+        "patched": false,
+        "fixed_bug": null
+      }
+    },
+    {
+      "name": "holdout_10_param_groups (dead_relu)",
+      "label": "dead_relu",
+      "set": "hand-written test",
+      "old": {
+        "seconds": 103.28,
+        "outcome": "fixed",
+        "top_cause": "dead_relu",
+        "patched": true,
+        "fixed_bug": "dead_relu"
+      },
+      "new": {
+        "seconds": 40.47,
+        "outcome": "fixed",
+        "top_cause": "dead_relu",
+        "patched": true,
+        "fixed_bug": "dead_relu"
+      }
+    },
+    {
+      "name": "holdout_10_param_groups (non_normalized_inputs)",
+      "label": "non_normalized_inputs",
+      "set": "hand-written test",
+      "old": {
+        "seconds": 147.6,
+        "outcome": "not_fixed",
+        "top_cause": "dead_relu",
+        "patched": false,
+        "fixed_bug": null
+      },
+      "new": {
+        "seconds": 55.0,
+        "outcome": "not_fixed",
+        "top_cause": "dead_relu",
+        "patched": false,
+        "fixed_bug": null
+      }
+    },
+    {
+      "name": "holdout_10_param_groups (label_data_misalignment)",
+      "label": "label_data_misalignment",
+      "set": "hand-written test",
+      "old": {
+        "seconds": 14.9,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "patched": false,
+        "fixed_bug": null
+      },
+      "new": {
+        "seconds": 16.39,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "patched": false,
+        "fixed_bug": null
+      }
+    }
+  ],
+  "summary": {
+    "benchmarks": {
+      "old": {
+        "buggy": 18,
+        "healthy": 17,
+        "repaired": 9,
+        "right_cause_first": 14,
+        "planted_bug_fixed": 8,
+        "healthy_changed": 2,
+        "errors": 0,
+        "total_seconds": 1366.1,
+        "median_seconds": 11.7,
+        "median_seconds_buggy": 76.37
+      },
+      "new": {
+        "buggy": 18,
+        "healthy": 17,
+        "repaired": 9,
+        "right_cause_first": 14,
+        "planted_bug_fixed": 8,
+        "healthy_changed": 2,
+        "errors": 0,
+        "total_seconds": 698.7,
+        "median_seconds": 12.46,
+        "median_seconds_buggy": 25.86
+      }
+    },
+    "hand-written test": {
+      "old": {
+        "buggy": 46,
+        "healthy": 12,
+        "repaired": 23,
+        "right_cause_first": 23,
+        "planted_bug_fixed": 16,
+        "healthy_changed": 2,
+        "errors": 0,
+        "total_seconds": 4012.2,
+        "median_seconds": 85.36,
+        "median_seconds_buggy": 99.55
+      },
+      "new": {
+        "buggy": 46,
+        "healthy": 12,
+        "repaired": 24,
+        "right_cause_first": 23,
+        "planted_bug_fixed": 16,
+        "healthy_changed": 2,
+        "errors": 0,
+        "total_seconds": 1814.9,
+        "median_seconds": 30.48,
+        "median_seconds_buggy": 36.05
+      }
+    },
+    "all": {
+      "old": {
+        "buggy": 64,
+        "healthy": 29,
+        "repaired": 32,
+        "right_cause_first": 37,
+        "planted_bug_fixed": 24,
+        "healthy_changed": 4,
+        "errors": 0,
+        "total_seconds": 5378.3,
+        "median_seconds": 76.37,
+        "median_seconds_buggy": 83.71
+      },
+      "new": {
+        "buggy": 64,
+        "healthy": 29,
+        "repaired": 33,
+        "right_cause_first": 37,
+        "planted_bug_fixed": 24,
+        "healthy_changed": 4,
+        "errors": 0,
+        "total_seconds": 2513.6,
+        "median_seconds": 25.86,
+        "median_seconds_buggy": 30.48
+      }
+    }
+  }
+}

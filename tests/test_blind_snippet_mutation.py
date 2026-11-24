@@ -101,10 +101,12 @@ def test_a_template_with_dropout_and_relu_gets_every_bug():
         ast.parse(code)
     assert "zero_grad" not in found["missing_zero_grad"]
     assert ".eval()" not in found["train_eval_mode_mismatch"]
-    assert "torch.softmax(self.out(x), dim=1)" in found["softmax_before_cross_entropy"]
+    assert ("torch.softmax(self.out(x), dim=1)" in found["softmax_before_cross_entropy"]
+            or "criterion(torch.softmax(output, dim=1), yb)" in found["softmax_before_cross_entropy"])
     assert "reduction='sum'" in found["wrong_loss_reduction"]
     assert "lr=10.0" in found["learning_rate_misconfigured"]
-    assert "requires_grad_(False)" in found["frozen_layer_no_grad"]
+    assert ("requires_grad_(False)" in found["frozen_layer_no_grad"]
+            or "list(model.parameters())[2:]" in found["frozen_layer_no_grad"])
     assert "-8.0" in found["dead_relu"]
     assert "* 255.0 + 128.0" in found["non_normalized_inputs"]
     assert "y_train = y_train[torch.randperm(len(y_train))]" in found["label_data_misalignment"]
@@ -117,7 +119,7 @@ def test_bugs_that_cannot_happen_are_not_planted():
     assert "dead_relu" not in found  # no ReLU
     assert "train_eval_mode_mismatch" not in found  # eval() changes nothing without dropout or batch norm
     sequential = mutants(render(Spec(style="sequential")))["softmax_before_cross_entropy"]
-    assert "nn.Softmax(dim=1)" in sequential
+    assert "nn.Softmax(dim=1)" in sequential or "criterion(torch.softmax(output, dim=1), yb)" in sequential
     adam = mutants(render(Spec(optimizer="adam", lr=0.002)))["learning_rate_misconfigured"]
     assert "lr=2.0" in adam  # adaptive optimizers get a larger factor
 
@@ -128,3 +130,34 @@ def test_random_templates_always_render_valid_code():
     rng = random.Random(3)
     for i in range(40):
         ast.parse(render(random_spec(rng, i)))
+
+
+# ------------------------------------------------------- hand-written test set
+def test_the_hand_written_test_set_applies_cleanly_and_gives_nothing_away():
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("holdout_variants", EXAMPLES / "holdout" / "variants.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    versions = module.versions()  # raises if any edit does not match exactly once
+    assert len(versions) == 97 and sum(v["split"] == "test" for v in versions) == 58
+    assert {v["label"] for v in versions} == set(OPERATORS) | {"clean"}
+    for v in versions:
+        ast.parse(v["code"])
+        assert [h for h in hints_left(v["code"]) if h != "the word 'fix'"] == [], (v["script"], v["label"])
+    codes = [v["code"] for v in versions]
+    assert len(set(codes)) == len(codes)  # every version differs from the others
+
+
+def test_each_bug_can_be_planted_more_than_one_way():
+    import random
+
+    rng = random.Random(0)
+    frozen, softmax = set(), set()
+    for i in range(40):
+        found = mutants(render(random_spec(rng, i)))
+        if "frozen_layer_no_grad" in found:
+            frozen.add("left out" if "parameters())[2:]" in found["frozen_layer_no_grad"] else "requires_grad")
+        if "softmax_before_cross_entropy" in found:
+            softmax.add("in loss" if "criterion(torch.softmax" in found["softmax_before_cross_entropy"] else "in model")
+    assert frozen == {"left out", "requires_grad"} and softmax == {"in loss", "in model"}

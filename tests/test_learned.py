@@ -16,12 +16,17 @@ def test_features_are_finite_and_named():
                         "zero_grad_calls": 0, "lr": 0.1, "frozen_fraction": 0.25, "forwards": 10,
                         "no_grad_forwards": 2, "no_grad_training_forwards": 2, "measured_outputs": 4,
                         "unit_outputs": 4, "rowsum_one_outputs": 4, "ce_calls": 3, "ce_probability_inputs": 3,
-                        "input_abs_mean": 100.0, "input_std": 50.0, "relu_zero_fraction": 0.9, "bias_mean": -8.0}}
+                        "input_abs_mean": 100.0, "input_std": 50.0, "relu_zero_fraction": 0.9, "bias_mean": -8.0,
+                        "mode_layers": True, "outside_optimizer_fraction": 0.25}}
     values = dict(zip(FEATURES, vectorize(report)))
     assert len(values) == len(FEATURES) and all(np.isfinite(list(values.values())))
     assert values["loss_nonfinite"] == 1.0 and values["zero_grad_per_step"] == 0.0
     assert values["rowsum_one_outputs"] == 1.0 and values["ce_on_probabilities"] == 1.0
-    assert values["no_grad_training_mode"] == 1.0 and values["log_input_scale"] == pytest.approx(2.0)
+    assert values["eval_missing_where_it_matters"] == 1.0 and values["log_input_scale"] == pytest.approx(2.0)
+    assert values["outside_optimizer"] == 0.25 and values["has_mode_layers"] == 1.0
+    # without dropout or batch norm, validating in training mode changes nothing, so it is not a signal
+    plain = dict(zip(FEATURES, vectorize(dict(report, trace=dict(report["trace"], mode_layers=False)))))
+    assert plain["eval_missing_where_it_matters"] == 0.0
     assert values["bias_mean"] < -0.99 and values["grad_growth"] > 0
     assert vectorize({}) == [0.0] * len(FEATURES)  # nothing measured: all zeros, no crash
     diverged = dict(report, trace=dict(report["trace"], bias_mean=float("nan")))
@@ -98,3 +103,23 @@ def test_an_advisory_classifier_is_shown_but_takes_no_part():
     assert agent.learned is None
     agent.run(AgentState(detection_report=Report(), extra={"learned": dict(prediction, mode="active")}))
     assert agent.learned["top"] == "dead_relu"
+
+
+def test_loss_call_features_separate_the_cases_that_look_alike():
+    import math
+
+    def report(train_values, val_values, reduction="mean", classes=5, batch=32):
+        calls = [{"fn": "cross_entropy", "train": True, "reduction": reduction, "value": v, "batch": batch,
+                  "classes": classes} for v in train_values]
+        calls += [{"fn": "cross_entropy", "train": False, "reduction": reduction, "value": v, "batch": 200,
+                   "classes": classes} for v in val_values]
+        return dict(zip(FEATURES, vectorize({"losses": train_values, "trace": {"loss_calls": calls}})))
+
+    chance = math.log(5)
+    shuffled = report([chance] * 20, [chance] * 4)
+    healthy = report([chance * 0.97 ** i for i in range(20)], [chance * 0.9 ** i for i in range(4)])
+    summed = report([chance * 32 * 0.97 ** i for i in range(20)], [chance * 200] * 4, reduction="sum")
+    assert abs(shuffled["end_vs_chance"]) < 0.01 and abs(shuffled["val_slope"]) < 0.01
+    assert healthy["end_vs_chance"] < -0.2 and healthy["val_slope"] < -0.1
+    assert summed["sum_reduction"] == 1.0 and summed["start_vs_chance"] > 1.4
+    assert shuffled["has_chance"] == 1.0 and shuffled["has_validation_loss"] == 1.0

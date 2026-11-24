@@ -9,8 +9,14 @@ taxonomy bug id, or "clean"), the template it came from (so an evaluation can
 hold out whole templates), and the raw trace, from which `learned/features.py`
 computes the features. Runs that crash are left out: a crash is not a silent bug.
 
-With `--benchmarks` the blind copies of the project's own benchmarks are traced
-too, as a separate test set: hand-written scripts the classifier never trains on.
+Each generated script also gets a second healthy version that learns more slowly (a
+4x larger batch and half the learning rate), because a slow healthy run is what the
+classifier most often mistook for a bug.
+
+Two hand-written test sets are traced too, unless `--no-benchmarks`: blind copies of
+the project's benchmarks (split "benchmark") and the separately written scripts in
+`examples/holdout/` (splits "holdout_dev", which models may be tuned on, and
+"holdout_test", which is only ever used to report results).
 """
 
 from __future__ import annotations
@@ -22,6 +28,7 @@ import random
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
@@ -41,6 +48,8 @@ def template_jobs(count: int, seed: int = 0) -> List[Dict[str, Any]]:
         healthy = render(spec)
         group = f"template_{seed}_{index}"
         jobs.append({"group": group, "label": CLEAN, "code": healthy, "spec": spec.to_dict(), "split": "train"})
+        slow = replace(spec, batch_size=min(256, spec.batch_size * 4), lr=round(spec.lr / 2, 6))
+        jobs.append({"group": group, "label": CLEAN, "code": render(slow), "spec": slow.to_dict(), "split": "train"})
         for bug, code in mutants(healthy).items():
             jobs.append({"group": group, "label": bug, "code": code, "spec": spec.to_dict(), "split": "train"})
     return jobs
@@ -59,6 +68,20 @@ def benchmark_jobs() -> List[Dict[str, Any]]:
         if healthy != buggy:
             jobs.append({"group": path.stem, "label": CLEAN, "code": healthy, "split": "benchmark"})
     return jobs
+
+
+def holdout_jobs() -> List[Dict[str, Any]]:
+    """The hand-written scripts in examples/holdout/, every version (see variants.py there)."""
+    import importlib.util
+
+    path = REPO / "examples" / "holdout" / "variants.py"
+    if not path.is_file():
+        return []
+    spec = importlib.util.spec_from_file_location("holdout_variants", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)  # type: ignore[union-attr]
+    return [{"group": v["script"].removesuffix(".py"), "label": v["label"], "code": v["code"],
+             "split": f"holdout_{v['split']}"} for v in module.versions()]
 
 
 def trace_run(code: str, *, sandbox: Any = None, max_steps: int = 60, timeout: float = 120.0,
@@ -84,7 +107,7 @@ def usable(report: Dict[str, Any]) -> bool:
 
 def build(out: Path, *, templates: int = 60, seed: int = 0, benchmarks: bool = True, workers: Optional[int] = None,
           max_steps: int = 60, log: Any = print) -> Dict[str, int]:
-    jobs = template_jobs(templates, seed) + (benchmark_jobs() if benchmarks else [])
+    jobs = template_jobs(templates, seed) + (benchmark_jobs() + holdout_jobs() if benchmarks else [])
     workers = workers or max(1, (os.cpu_count() or 2) // 2)
     started = time.perf_counter()
     done = {"kept": 0, "crashed": 0}
@@ -94,7 +117,7 @@ def build(out: Path, *, templates: int = 60, seed: int = 0, benchmarks: bool = T
         if not usable(report):
             return None
         return {"group": job["group"], "label": job["label"], "split": job["split"], "spec": job.get("spec"),
-                "report": {"losses": report.get("losses", []), "trace": report["trace"]}}
+                "code": job["code"], "report": {"losses": report.get("losses", []), "trace": report["trace"]}}
 
     out.parent.mkdir(parents=True, exist_ok=True)
     with out.open("w", encoding="utf-8") as handle, ThreadPoolExecutor(workers) as pool:

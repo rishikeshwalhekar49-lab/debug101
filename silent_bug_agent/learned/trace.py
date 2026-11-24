@@ -4,8 +4,10 @@
 few numbers per optimizer step and per forward pass, never the tensors, so it is
 cheap: the gradient norm, how much of the model got a gradient, how far the step
 moved the weights, whether the model's outputs look like probabilities, how many
-ReLU outputs are zero, the scale of the inputs, and whether validation passes ran
-with the model still in training mode. `features.py` turns these into the
+ReLU outputs are zero, the scale of the inputs, whether validation passes ran
+with the model still in training mode, and every call to a loss function: its value,
+its `reduction`, the batch size and (for classification) the number of classes, for
+training and validation separately. `features.py` turns these into the
 classifier's input vector.
 """
 
@@ -17,6 +19,11 @@ from typing import Any, Dict, List, Optional
 MAX_STEPS_KEPT = 2000
 MAX_FORWARDS_MEASURED = 300
 MAX_TRACKED_VALUES = 2_000_000  # weights copied per step to measure the update; larger models skip it
+MAX_LOSS_CALLS = 2000
+# loss functions in torch.nn.functional; the nn.*Loss modules call these, so patching them covers both
+LOSS_FUNCTIONS = ("cross_entropy", "nll_loss", "mse_loss", "l1_loss", "smooth_l1_loss", "huber_loss",
+                  "binary_cross_entropy", "binary_cross_entropy_with_logits")
+CLASSIFICATION = ("cross_entropy", "nll_loss")
 
 
 def _first_tensor(value: Any, torch: Any) -> Optional[Any]:
@@ -48,6 +55,10 @@ class Tracer:
         self.input_stds: List[float] = []
         self.relu_zero: List[float] = []
         self.ce_calls = self.ce_probability_inputs = 0  # cross_entropy given probabilities: softmax applied twice
+        self.loss_calls: List[Dict[str, Any]] = []  # {train, reduction, value, batch, classes, fn}
+        self.mode_layers = False  # a watched model has dropout or batch norm, so train()/eval() matters
+        self._model_params: set = set()  # id of every trainable parameter of the watched models
+        self._optimizer_params: set = set()  # id of every parameter some optimizer updates
         self._models: Dict[int, Any] = {}
         self._handles: List[Any] = []
         self._undo: List[Any] = []
@@ -77,21 +88,44 @@ class Tracer:
 
         import torch.nn.functional as F
 
-        original_ce = F.cross_entropy
+        for name in LOSS_FUNCTIONS:
+            original = getattr(F, name, None)
+            if original is not None:
+                setattr(F, name, self._watch_loss(name, original, torch))
+                self._undo.append(lambda name=name, original=original: setattr(F, name, original))
 
-        def cross_entropy(logits: Any, *args: Any, **kwargs: Any) -> Any:
-            if tracer.ce_calls < MAX_FORWARDS_MEASURED and isinstance(logits, torch.Tensor) \
-                    and logits.is_floating_point() and logits.dim() == 2 and logits.numel():
-                tracer.ce_calls += 1
-                with torch.no_grad():
-                    x = logits.detach().float()
-                    if float(x.min()) >= 0.0 and float(x.max()) <= 1.0 \
-                            and float((x.sum(dim=1) - 1.0).abs().max()) < 1e-3:
-                        tracer.ce_probability_inputs += 1
-            return original_ce(logits, *args, **kwargs)
+    def _watch_loss(self, name: str, original: Any, torch: Any) -> Any:
+        tracer = self
 
-        F.cross_entropy = cross_entropy  # nn.CrossEntropyLoss.forward calls F.cross_entropy
-        self._undo.append(lambda: setattr(F, "cross_entropy", original_ce))
+        def loss(prediction: Any, *args: Any, **kwargs: Any) -> Any:
+            out = original(prediction, *args, **kwargs)
+            try:
+                tracer._record_loss(name, prediction, kwargs, out, torch)
+            except Exception:  # noqa: BLE001 - measuring must never break the user's training
+                pass
+            return out
+
+        return loss
+
+    def _record_loss(self, name: str, prediction: Any, kwargs: Dict[str, Any], out: Any, torch: Any) -> None:
+        if len(self.loss_calls) >= MAX_LOSS_CALLS or not isinstance(prediction, torch.Tensor):
+            return
+        reduction = kwargs.get("reduction", "mean")
+        if kwargs.get("size_average") is False or kwargs.get("reduce") is False:
+            reduction = "sum"  # the old spellings of reduction="sum"
+        value = float(out.detach()) if isinstance(out, torch.Tensor) and out.numel() == 1 else None
+        batch = int(prediction.shape[0]) if prediction.dim() >= 1 else 1
+        classes = int(prediction.shape[1]) if name in CLASSIFICATION and prediction.dim() >= 2 else None
+        self.loss_calls.append({"fn": name, "train": bool(torch.is_grad_enabled()), "reduction": str(reduction),
+                                "value": value, "batch": batch, "classes": classes})
+        if name == "cross_entropy" and self.ce_calls < MAX_FORWARDS_MEASURED and prediction.dim() == 2 \
+                and prediction.is_floating_point() and prediction.numel():
+            self.ce_calls += 1
+            with torch.no_grad():
+                x = prediction.detach().float()
+                if float(x.min()) >= 0.0 and float(x.max()) <= 1.0 \
+                        and float((x.sum(dim=1) - 1.0).abs().max()) < 1e-3:
+                    self.ce_probability_inputs += 1
 
     def uninstall(self) -> None:
         for handle in self._handles:
@@ -113,6 +147,7 @@ class Tracer:
             if key not in self._models:
                 self._watch(model, torch)
         params = [p for g in optimizer.param_groups for p in g["params"]]
+        self._optimizer_params.update(id(p) for p in params)
         if len(self.grad_norms) >= MAX_STEPS_KEPT or not params:
             return
         squares, missing = 0.0, 0
@@ -150,6 +185,9 @@ class Tracer:
     # -------------------------------------------------------------- forward
     def _watch(self, model: Any, torch: Any) -> None:
         self._models[id(model)] = model
+        self._model_params.update(id(p) for p in model.parameters() if p.requires_grad)
+        mode_dependent = (torch.nn.modules.dropout._DropoutNd, torch.nn.modules.batchnorm._NormBase)
+        self.mode_layers = self.mode_layers or any(isinstance(m, mode_dependent) for m in model.modules())
         tracer = self
 
         def on_forward(module: Any, inputs: Any, output: Any) -> None:
@@ -226,6 +264,9 @@ class Tracer:
             "measured_outputs": self.measured_outputs, "unit_outputs": self.unit_outputs,
             "rowsum_one_outputs": self.rowsum_one_outputs,
             "ce_calls": self.ce_calls, "ce_probability_inputs": self.ce_probability_inputs,
+            "loss_calls": self.loss_calls, "mode_layers": self.mode_layers,
+            "outside_optimizer_fraction": (len(self._model_params - self._optimizer_params) / len(self._model_params)
+                                           if self._model_params else None),
             "input_abs_mean": sum(self.input_abs_means) / len(self.input_abs_means) if self.input_abs_means else None,
             "input_std": sum(self.input_stds) / len(self.input_stds) if self.input_stds else None,
             "relu_zero_fraction": sum(self.relu_zero) / len(self.relu_zero) if self.relu_zero else None,

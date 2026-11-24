@@ -3,15 +3,18 @@
     python -m silent_bug_agent.mutation.dataset --templates 80 --out traces.jsonl
     python -m silent_bug_agent.learned.train --data traces.jsonl --out silent_bug_agent/learned/weights.json
 
-Two numbers are reported, and they answer different questions:
+The data has four parts, and each has one job:
 
-* cross-validation over generated scripts, holding out whole templates: how well
-  it recognises a planted bug in a script it has not seen, written the same way;
-* the project's own benchmarks (blind copies): hand-written scripts it never
-  trained on. This is the number to quote, because it is the closest to real use.
+* "train": generated scripts. The model learns from these; cross-validation over them,
+  holding out whole templates, says how well it does on scripts written the same way.
+* "holdout_dev": hand-written scripts (examples/holdout/, 01 to 04) used to choose the
+  model's settings (hidden layer size, regularisation).
+* "holdout_test" and "benchmark": hand-written scripts that are never used to choose
+  anything. Their accuracy is the number to quote.
 
-Both a softmax regression and a one-hidden-layer network are tried; the one with
-the better cross-validated accuracy is kept, then refitted on every training run.
+The settings with the best accuracy on the development scripts (averaged over three
+seeds; on a tie the simpler model wins) are kept, and the model is refitted on all the
+training runs.
 """
 
 from __future__ import annotations
@@ -29,7 +32,8 @@ from ..mutation.dataset import read
 from .features import vectorize
 from .model import WEIGHTS, TraceClassifier
 
-CANDIDATES = ({"hidden": 0, "l2": 1e-3}, {"hidden": 32, "l2": 1e-3})
+CANDIDATES = tuple({"hidden": h, "l2": l2} for h in (0, 16, 32) for l2 in (1e-3, 1e-2))  # simplest first
+TEST_SPLITS = ("holdout_test", "benchmark")
 
 
 def _matrix(rows: Sequence[Dict[str, Any]]) -> Tuple[np.ndarray, List[str], List[str]]:
@@ -73,6 +77,11 @@ def confusion(pairs: Sequence[Tuple[str, str]]) -> List[str]:
     return [f"{t} -> {p}: {n}" for (t, p), n in counts.most_common(8)]
 
 
+def _accuracy(model: TraceClassifier, X: np.ndarray, y: Sequence[str]) -> float:
+    predicted = [model.classes[int(i)] for i in model.probabilities(X).argmax(axis=1)]
+    return float(np.mean([p == t for p, t in zip(predicted, y)])) if len(y) else 0.0
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m silent_bug_agent.learned.train")
     parser.add_argument("--data", required=True, help="JSON lines from silent_bug_agent.mutation.dataset")
@@ -82,45 +91,58 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     rows = list(read(Path(options.data)))
     train = [r for r in rows if r["split"] == "train"]
-    bench = [r for r in rows if r["split"] == "benchmark"]
+    dev = [r for r in rows if r["split"] == "holdout_dev"]
     X, y, groups = _matrix(train)
     print(f"{len(train)} training runs from {len(set(groups))} templates; classes: {dict(Counter(y))}")
+    if not dev:
+        print("no development scripts in the data: choosing by cross-validation instead")
+    Xd, yd, _ = _matrix(dev) if dev else (None, [], [])
 
-    results = []
+    best: Tuple[float, Dict[str, Any]] = (-1.0, CANDIDATES[0])
     for params in CANDIDATES:
-        started = time.perf_counter()
-        cv, pairs = cross_validate(X, y, groups, params, k=options.folds)
-        results.append((cv["accuracy"], params, cv, pairs))
-        print(f"  hidden={params['hidden']:<3} held-out-template accuracy {cv['accuracy']:.3f}, "
-              f"macro recall {cv['macro_recall']:.3f} ({time.perf_counter() - started:.0f}s)")
-    _, params, cv, pairs = max(results, key=lambda r: r[0])
+        if dev:
+            score_ = float(np.mean([_accuracy(TraceClassifier.fit(X, y, seed=seed, **params), Xd, yd)
+                                    for seed in range(3)]))
+        else:
+            score_ = cross_validate(X, y, groups, params, k=options.folds)[0]["accuracy"]
+        print(f"  hidden={params['hidden']:<3} l2={params['l2']:<6} "
+              f"{'development' if dev else 'cross-validated'} accuracy {score_:.3f}")
+        if score_ > best[0] + 1e-9:
+            best = (score_, params)
+    params = best[1]
+    cv, pairs = cross_validate(X, y, groups, params, k=options.folds)
     model = TraceClassifier.fit(X, y, **params)
 
-    bench_score: Dict[str, Any] = {"n": 0}
+    reports: Dict[str, Any] = {}
     mistakes: List[str] = []
-    if bench:
-        Xb, yb, gb = _matrix(bench)
-        P = model.probabilities(Xb)
-        predicted = [model.classes[int(np.argmax(p))] for p in P]
-        bench_score = score(yb, predicted)
-        mistakes = [f"{g} ({t}) -> {p}" for g, t, p in zip(gb, yb, predicted) if t != p]
+    for name, splits in (("dev", ("holdout_dev",)), ("holdout_test", ("holdout_test",)),
+                         ("benchmarks", ("benchmark",)), ("test", TEST_SPLITS)):
+        chosen = [r for r in rows if r["split"] in splits]
+        if not chosen:
+            reports[name] = {"n": 0}
+            continue
+        Xs, ys, gs = _matrix(chosen)
+        predicted = [model.classes[int(i)] for i in model.probabilities(Xs).argmax(axis=1)]
+        reports[name] = score(ys, predicted)
+        if name == "dev":  # mistakes are studied on the development scripts only, never on the test scripts
+            mistakes = [f"{g} ({t}) -> {p}" for g, t, p in zip(gs, ys, predicted) if t != p]
 
     started = time.perf_counter()
     for _ in range(1000):
         model.probabilities(X[:1])
     per_prediction_us = (time.perf_counter() - started) * 1000
 
-    model.meta.update({"trained_on_runs": len(train), "templates": len(set(groups)),
-                       "cross_validated": cv, "benchmarks": bench_score, "benchmark_mistakes": mistakes,
+    model.meta.update({"trained_on_runs": len(train), "templates": len(set(groups)), "chosen": params,
+                       "cross_validated": cv, **reports, "dev_mistakes": mistakes,
                        "trained": time.strftime("%Y-%m-%d")})
     path = model.save(Path(options.out))
-    print(f"kept hidden={params['hidden']}; most common mistakes: {confusion(pairs) or 'none'}")
-    print(f"per-class recall (held-out templates): {cv['recall']}")
-    if bench:
-        print(f"benchmarks (hand-written, never trained on): accuracy {bench_score['accuracy']:.3f} "
-              f"on {bench_score['n']} runs; recall {bench_score['recall']}")
-        for line in mistakes:
-            print(f"  wrong: {line}")
+    print(f"kept hidden={params['hidden']} l2={params['l2']}; cross-validated {cv['accuracy']:.3f}; "
+          f"most common mistakes there: {confusion(pairs) or 'none'}")
+    for name in ("dev", "holdout_test", "benchmarks", "test"):
+        if reports[name].get("n"):
+            print(f"{name}: accuracy {reports[name]['accuracy']:.3f} on {reports[name]['n']} runs")
+    for line in mistakes:
+        print(f"  wrong on a development script: {line}")
     print(f"saved {path} ({path.stat().st_size / 1024:.1f} KB); one prediction takes {per_prediction_us:.0f} microseconds")
     return 0
 

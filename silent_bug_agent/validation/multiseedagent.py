@@ -451,19 +451,19 @@ class MultiseedAgent:
         return [self._baseline_runs[(key, seed)] for seed in seeds], runs[len(missing):]
 
     def _interim(self, base: List[Run], patch: List[Run]) -> Optional[str]:
-        """After the first seeds: 'reject' (the patch failed), 'accept' (already significant at the stricter
-        level), 'futility' (no improvement on average, so it cannot pass), or None (run the other seeds)."""
+        """After the first seeds: 'reject' (the patch crashed or diverged), 'accept' (already significant at the
+        stricter level), or None (run the other seeds).
+
+        There is deliberately no early stop for "no improvement so far": a patch that removes the detected bug
+        can still be accepted if it is not worse, and three seeds are too few to say that. Stopping there cost a
+        repair the older version made (examples/compare_versions.py, holdout_06 with zero_grad removed)."""
         if any(loss is None for loss, _ in patch):
             return "reject"
         if any(loss is None for loss, _ in base):
             return None  # the baseline-failed route needs every seed
         comparison = compare_distributions([l for l, _ in base], [l for l, _ in patch],
                                            alpha=self.interim_alpha, prefer_test=self.prefer_test)
-        if comparison.is_significant:
-            return "accept"
-        if comparison.mean_difference <= 0:
-            return "futility"
-        return None
+        return "accept" if comparison.is_significant else None
 
     def verify_patch(
         self,
@@ -530,8 +530,6 @@ class MultiseedAgent:
             notes = stats_comparison.notes
             if stopped == "accept":
                 notes += f" Stopped after {n} of {len(self.seeds)} seeds: the result was already clear at the stricter level."
-            elif stopped == "futility":
-                notes += f" Stopped after {n} of {len(self.seeds)} seeds: the patch did not lower the loss on average."
             elif staged:
                 notes += (f" Tested in two looks ({self.interim_seeds} seeds at p < {self.interim_alpha}, then all "
                           f"{n} at p < {alpha:g}), so the overall false-accept rate stays at or below {self.alpha}.")

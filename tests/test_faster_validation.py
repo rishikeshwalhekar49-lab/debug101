@@ -59,12 +59,13 @@ def test_a_clear_improvement_stops_after_three_seeds():
     assert sum(sandbox.calls.values()) == 6 and "Stopped after 3 of 5 seeds" in verdict.notes
 
 
-def test_no_improvement_stops_early_and_is_rejected():
+def test_no_improvement_still_runs_every_seed():
+    """No early stop for "not better so far": the bug-removed route needs all the seeds to judge "not worse"."""
     worse = "print('worse')\n"
     sandbox = FakeSandbox({BASE: {s: 1.0 for s in range(1, 6)}, worse: {s: 1.2 + 0.01 * s for s in range(1, 6)}})
     verdict = agent(sandbox).verify_patch(BASE, candidate(worse))
-    assert not verdict.accepted and verdict.seeds_run == 3
-    assert verdict.extra["sequential"]["stopped_early"] == "futility"
+    assert not verdict.accepted and verdict.seeds_run == 5
+    assert verdict.extra["sequential"]["stopped_early"] is None
 
 
 def test_an_unclear_result_runs_every_seed_at_the_stricter_final_level():
