@@ -131,6 +131,44 @@ What it says:
 - These times were measured while other comparisons were running on the same machine, so
   they are slower than on an idle one. The ratios between models hold.
 
+## Against public LLMs
+
+`examples/compare_llms.py` asks the open-weight chat models Groq served on 25 November
+2026 the same question about the same 56 Colab test runs. Each model gets the same list of
+the ten labels with a one-line description each, and answers in JSON. It is asked twice:
+given the training script only, which is what an LLM-based debugger reads, and given the
+script plus the 62 named statistics our model reads. Before a script is sent, the local
+data path is put back to Colab's `/content/sample_data`. Every answer is in
+`images/llm_answers.jsonl`, and `plot_llms.py` draws the chart.
+
+![Our model against public LLMs](images/llm_comparison.png)
+
+| Model | Parameters | Script only | Script + run statistics | Healthy flagged (of 18) | Time per answer |
+|---|---|---|---|---|---|
+| **Trace classifier v4 (ours)** | **1,178** | | **80.4% (45)** | **3** | **17 µs** (after a 150-step traced run) |
+| gpt-oss-120b | 117 B | 78.6% (44) | 82.1% (46) | 2 / 0 | 8 s / 12 s |
+| Qwen 3.8 27B | 27 B | 71.4% (40) | 82.1% (46) | 5 / 4 | 8 s / 13 s |
+| gpt-oss-20b | 21 B | 69.6% (39) | 66.1% (37) | 4 / 5 | 7 s / 12 s |
+| ALLaM 2 7B | 7 B | 8.9% (5) | 10.7% (6) | 18 / 18 | 14 s / 12 s |
+
+What it says:
+
+- **It is a tie with the best LLMs.** gpt-oss-120b and Qwen 3.8 27B reach 46 of 56 only when
+  they are given our model's statistics of the run; ours gets 45. Each interval is about ±11
+  points, so one run apart is no difference.
+- **From the script alone, no LLM does better than ours.** The run's statistics carry what
+  the code does not show: whether the loss falls, whether gradients pile up, how big the
+  inputs really are.
+- **ALLaM, a 7B model built mainly for Arabic, is not usable here.** It never answered
+  "clean", and given the statistics it said "learning rate" 44 times in 56.
+- **Size and speed.** Ours is about 100 million times smaller than gpt-oss-120b, needs no
+  network or key, and answers in microseconds against seconds.
+- **The LLMs were not tuned for this test, and neither was ours.** The prompt was written
+  once and not changed after the results.
+- **Only open-weight models Groq serves were tested.** Llama 3.3 70B, Llama 3.1 8B and
+  Qwen3 32B were on the first list, but Groq no longer serves them
+  (`compare_llms.py --list-models`).
+
 ## How the pipeline uses it
 
 While the runtime monitor runs, the script is traced once more in parallel
@@ -222,4 +260,3 @@ where v3 flagged 6 of the 29 old ones.
   generator, in the structure of other people's notebooks. That makes it a fair test of
   realistic code, not an independent one; scripts written by other people would make it
   stronger.
-- LLMs (gpt-oss) have not been compared yet: `compare_models.py --llm` needs a Groq key.

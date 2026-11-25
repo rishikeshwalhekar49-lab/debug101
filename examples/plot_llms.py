@@ -50,7 +50,7 @@ def main(source: str, out: str, set_name: str = "Colab test") -> int:
     names = sorted({r["model"] for r in measured},
                    key=lambda m: -max(r["accuracy"] for r in measured if r["model"] == m))
 
-    fig, (left, right) = plt.subplots(1, 2, figsize=(14, 6.4), gridspec_kw={"width_ratios": [1.15, 1]})
+    fig, (left, right) = plt.subplots(1, 2, figsize=(14, 7.0), gridspec_kw={"width_ratios": [1.15, 1]})
     fig.patch.set_facecolor(SURFACE)
     for ax in (left, right):
         ax.set_facecolor(SURFACE)
@@ -133,16 +133,21 @@ def main(source: str, out: str, set_name: str = "Colab test") -> int:
 
     fig.suptitle("A 1,178-weight model against public LLMs at naming the bug in a PyTorch training run",
                  x=0.012, y=0.995, ha="left", fontsize=14.5, fontweight="bold", color=INK)
+    times = [r["median_seconds"] for r in measured if r.get("median_seconds")]
     notes = (f"{set_name}: {ours['n']} runs of 6 scripts from Google Colab notebooks (PyTorch tutorials, d2l.ai) on "
              "Colab's sample data, bugs planted by hand, never used to choose anything. Nine silent bugs or \"clean\"."
-             " Each LLM got the same catalogue of the ten labels with a one-line description each and answered in JSON;"
-             " given the script only, and given the script plus the 62 named statistics our model reads. LLMs via"
-             " Groq's free tier (temperature 0.2); parameter counts as published by their makers. Thin lines: 95%"
-             " Wilson intervals. Code: examples/compare_llms.py, plot_llms.py.")
+             " Each LLM got the same list of the ten labels with a one-line description each and answered in JSON,"
+             " once given the script only and once given the script plus the 62 named statistics our model reads."
+             " The open-weight chat models Groq served on 25 Nov 2026, through its API (temperature 0.2). Parameters:"
+             " OpenAI's published counts for gpt-oss, the size in the name for the others."
+             + (f" An LLM answer took {min(times):.0f}-{max(times):.0f} s (median per model); ours takes about 17 µs,"
+                " after a 150-step traced run that happens beside the debugger's own run." if times else "")
+             + " ALLaM, built mainly for Arabic, never answered \"clean\". Thin lines: 95% Wilson intervals."
+             " Code: examples/compare_llms.py, plot_llms.py.")
     if missing:
         notes += " Not measured (did not answer every run): " + ", ".join(missing) + "."
     fig.text(0.012, 0.012, "\n".join(textwrap.wrap(notes, 210)), fontsize=8.2, color=MUTED, ha="left", va="bottom")
-    fig.tight_layout(rect=(0, 0.08, 1, 0.95))
+    fig.tight_layout(rect=(0, 0.13, 1, 0.95))
     fig.savefig(out, dpi=200, facecolor=SURFACE)
     print(f"saved {out}")
     return 0

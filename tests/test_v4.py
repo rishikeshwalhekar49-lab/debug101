@@ -156,3 +156,15 @@ def test_compare_versions_reads_a_version_with_arguments():
 
     name, path, extra = parse_version("v4=.:--learned active")
     assert name == "v4" and path.is_absolute() and extra == ["--learned", "active"]
+
+
+def test_llm_prompts_carry_no_local_paths():
+    sys.path.insert(0, str(REPO / "examples"))
+    from compare_llms import LABEL_HELP, prompt_for, sanitise
+
+    code = 'SAMPLE_DATA = "/Users/someone/.cache/silent_bug_agent/sample_data"\nprint(1)\n'
+    assert sanitise(code).startswith('SAMPLE_DATA = "/content/sample_data"')
+    row = {"code": code, "report": {"losses": [2.0, 1.0], "trace": {}}}
+    for kind in ("code", "code+stats"):
+        prompt = prompt_for(row, kind)
+        assert "/Users/" not in prompt and all(label in prompt for label in LABEL_HELP)

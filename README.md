@@ -195,11 +195,13 @@ A snippet is read, never run, so its findings are **not validated**: the report 
 ### 1c. The trace classifier (a small model trained in this project)
 `fix` and `diagnose` also run the script once, traced for 150 steps, at the same time as the runtime monitor's run, and a small model gives its guess: `Trace classifier (a trained model; a hint, not proof): missing_zero_grad 0.98, ...`. Version 4 reads 62 numbers: statistics of the run, including every `backward()` call, so scripts that update weights by hand are covered too, and facts read from the code. It is a numpy network with one hidden layer of 16 units: 1,178 weights, a 16.5 KB file, about 17 µs a prediction. It was trained on 1,121 runs of generated scripts and of scripts from Google Colab notebooks, with planted bugs.
 
-On a new test set nothing was tuned on, 56 runs of six Colab-notebook scripts (the PyTorch tutorials and d2l.ai, on Colab's sample data), it names the bug (or "clean") **80.4%** of the time. Versions 1 to 3 got 48% to 55% on the same runs. On the older 84-run test it gets 95.2% (v3: 85.7%), but that set has been seen, so quote the Colab number. Against other models given the same features and the same tuning (mean of 5 seeds), it ties with a random forest 500 times its size on the Colab test (79.6% against 79.3%). The rules alone get 57%. It flags 5 of 47 healthy test runs. Because it now helps (on the tuning scripts, right cause first 47 of 54 instead of 32, and no healthy script changed), `fix` and `diagnose` let it take part by default: a confident guess becomes a finding and its probabilities nudge the ranking of causes. `--learned advisory` only shows the guess, and `--learned off` skips it. Every patch still has to pass both gates.
+On a new test set nothing was tuned on, 56 runs of six Colab-notebook scripts (the PyTorch tutorials and d2l.ai, on Colab's sample data), it names the bug (or "clean") **80.4%** of the time. Versions 1 to 3 got 48% to 55% on the same runs. On the older 84-run test it gets 95.2% (v3: 85.7%), but that set has been seen, so quote the Colab number. Against other models given the same features and the same tuning (mean of 5 seeds), it ties with a random forest 500 times its size on the Colab test (79.6% against 79.3%). The rules alone get 57%. Against public LLMs on the same runs it also ties. gpt-oss-120b and Qwen 3.8 27B reach 82% only when they are given its run statistics as well as the script, and from the script alone the best LLM gets 79% (`examples/compare_llms.py`, chart below). It flags 5 of 47 healthy test runs. Because it now helps (on the tuning scripts, right cause first 47 of 54 instead of 32, and no healthy script changed), `fix` and `diagnose` let it take part by default: a confident guess becomes a finding and its probabilities nudge the ranking of causes. `--learned advisory` only shows the guess, and `--learned off` skips it. Every patch still has to pass both gates.
 
 ![Every version on the same scripts](docs/images/all_versions.png)
 
 ![Leaderboard](docs/images/leaderboard.png)
+
+![Against public LLMs](docs/images/llm_comparison.png)
 
 How it was built, the Colab scripts, the label check, every model and version it was compared with, and how often the test set was looked at: [docs/learned_classifier.md](docs/learned_classifier.md).
 
@@ -388,6 +390,7 @@ AgenticDLDebugger/
 │   ├── compare_models.py             # The trace classifier against other models; plot_leaderboard.py, plot_comparison.py draw it
 │   ├── compare_classifier_versions.py  # Every classifier version (v1-v4) on the same runs
 │   ├── compare_versions.py           # Every version of the debugger end to end; plot_versions.py, plot_all_versions.py draw it
+│   ├── compare_llms.py               # The classifier against public LLMs on Groq (needs GROQ_API_KEY); plot_llms.py draws it
 │   ├── snippets/                     # Code fragments for `snippet`
 │   ├── benchmark_hooks.py            # Module 1 overhead benchmark
 │   └── evaluate_pipeline.py          # Repair rate and damage rate on the benchmarks

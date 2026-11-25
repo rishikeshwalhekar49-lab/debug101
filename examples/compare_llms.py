@@ -10,9 +10,9 @@ Each LLM answers the same question as the classifier: which of nine silent bugs,
 * "code + run statistics": the script and the numbers the classifier reads from the
   same traced run, named (so the LLM has everything the classifier has).
 
-The models are the public open-weight ones the project's free-tier providers serve
-(GROQ_API_KEY, or CEREBRAS_API_KEY for the models Cerebras serves). The keys come from
-the environment or `.env`, as everywhere else in the project.
+The models are the public open-weight chat models Groq serves (GROQ_API_KEY, from the
+environment or `.env`, as everywhere else in the project). Only Groq is used here; the
+project's Cerebras support is not involved.
 
 Before a script is sent, the local path of Colab's sample data is put back to
 `/content/sample_data`, so nothing about this machine leaves it. Every answer is
@@ -44,14 +44,16 @@ from silent_bug_agent.learned.model import load_default  # noqa: E402
 from silent_bug_agent.mutation.dataset import read  # noqa: E402
 
 CLEAN = "clean"
-# provider, model id, name shown, total parameters, active parameters per token (published by the makers)
+# provider, model id, name shown, total parameters, active parameters per token. Counts: OpenAI's published
+# figures for gpt-oss; the size in the model's name for the others. Providers retire models often: the list is
+# the open-weight chat models Groq served on 25 Nov 2026 (`--list-models` prints today's).
 MODELS: List[Tuple[str, str, str, float, Optional[float]]] = [
     ("groq", "openai/gpt-oss-120b", "gpt-oss-120b", 117e9, 5.1e9),
     ("groq", "openai/gpt-oss-20b", "gpt-oss-20b", 21e9, 3.6e9),
-    ("groq", "llama-3.3-70b-versatile", "Llama 3.3 70B", 70.6e9, None),
-    ("groq", "qwen/qwen3-32b", "Qwen3 32B", 32.8e9, None),
-    ("groq", "llama-3.1-8b-instant", "Llama 3.1 8B", 8.0e9, None),
+    ("groq", "qwen/qwen3.8-27b", "Qwen 3.8 27B", 27e9, None),
+    ("groq", "allam-2-7b", "ALLaM 2 7B", 7e9, None),
 ]
+SMALL_CONTEXT = {"allam-2-7b"}  # a 4,096-token window: short replies, and no reasoning settings
 LABEL_HELP = {
     "clean": "no bug: the script trains as intended",
     "missing_zero_grad": "gradients are never cleared between updates (no optimizer.zero_grad() or equivalent), so they accumulate",
@@ -136,6 +138,26 @@ def ask(client: Any, row: Dict[str, Any], kind: str, waits: int = 6) -> Tuple[Op
     return None, 0.0, "gave up"
 
 
+def list_models(router: Any, provider: str = "groq") -> int:
+    """The chat models the provider serves today (providers retire models often)."""
+    import httpx
+
+    from silent_bug_agent.semantic.router import PROVIDERS
+
+    key = router.key_for(provider)
+    if key is None:
+        print(f"no key for {provider}", file=sys.stderr)
+        return 2
+    response = httpx.get(f"{PROVIDERS[provider].base_url}/models", headers={"Authorization": f"Bearer {key}"},
+                         timeout=30)
+    if response.status_code != 200:
+        print(f"{provider}: HTTP {response.status_code}", file=sys.stderr)
+        return 1
+    for model in sorted(response.json().get("data", []), key=lambda m: m.get("id", "")):
+        print(f"{model.get('id')}  (owned by {model.get('owned_by')}, context {model.get('context_window')})")
+    return 0
+
+
 def metrics(truth: Sequence[str], predicted: Sequence[str]) -> Dict[str, Any]:
     healthy = [p for t, p in zip(truth, predicted) if t == CLEAN]
     return {"n": len(truth), "correct": int(sum(t == p for t, p in zip(truth, predicted))),
@@ -151,11 +173,14 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--models", nargs="+", default=None, help="model ids to ask (default: all in MODELS)")
     parser.add_argument("--cache", default=str(REPO_ROOT / ".llm_answers.jsonl"))
     parser.add_argument("--json", default=None)
+    parser.add_argument("--list-models", action="store_true", help="print the models the provider serves now, and stop")
     options = parser.parse_args(argv)
 
     from silent_bug_agent.semantic.router import ModelRouter
 
     router = ModelRouter()
+    if options.list_models:
+        return list_models(router)
     rows = [r for r in read(Path(options.data)) if any(r["split"] in SPLITS[s] for s in options.sets)]
     for index, row in enumerate(rows):
         row["key"] = f"{row['split']}:{row['group']}:{row['label']}:{index}"
@@ -174,7 +199,11 @@ def main(argv: Optional[List[str]] = None) -> int:
         provider, model_id, name, _, _ = model
         from silent_bug_agent.semantic.router import TaskModel
 
-        client = router.client_for(TaskModel(provider, model_id, "low" if "gpt-oss" in model_id else None, 1024))
+        small_context = model_id in SMALL_CONTEXT
+        client = router.client_for(TaskModel(provider, model_id, "low" if "gpt-oss" in model_id else None,
+                                             256 if small_context else 1024))
+        if small_context:
+            client.extra_body = {}  # no reasoning to hide, and the provider rejects the setting for this model
         for kind in options.kinds:
             for row in rows:
                 if cache.get(model_id, kind, row["key"]):
