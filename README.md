@@ -193,13 +193,15 @@ Get-Clipboard | python -m silent_bug_agent snippet        # Windows PowerShell
 A snippet is read, never run, so its findings are **not validated**: the report says so on every run. To test a repair, run `fix` on the full training script. In the terminal UI this is the **SNIPPET** entry.
 
 ### 1c. The trace classifier (a small model trained in this project)
-`fix` and `diagnose` also run the script once, traced, next to the runtime monitor, and a small model gives its guess: `Trace classifier (a trained model; a hint, not proof): missing_zero_grad 0.98, ...`. It is a numpy softmax regression over 34 statistics of the run (350 weights, a 6.8 KB file, about 10 µs a prediction), trained on 781 runs of generated scripts with planted bugs.
+`fix` and `diagnose` also run the script once, traced for 150 steps, at the same time as the runtime monitor's run, and a small model gives its guess: `Trace classifier (a trained model; a hint, not proof): missing_zero_grad 0.98, ...`. Version 4 reads 62 numbers: statistics of the run, including every `backward()` call, so scripts that update weights by hand are covered too, and facts read from the code. It is a numpy network with one hidden layer of 16 units: 1,178 weights, a 16.5 KB file, about 17 µs a prediction. It was trained on 1,121 runs of generated scripts and of scripts from Google Colab notebooks, with planted bugs.
 
-On 84 hand-written test runs that were never used to choose anything it names the bug (or "clean") **85.7%** of the time, on par with or slightly ahead of a random forest and an SVM given the same features (83.3%) that are 450 and 35 times bigger. It still flags about 1 in 5 healthy runs, so by default it only advises: `--learned active` lets it add findings and re-rank causes (measured with an earlier version to make the benchmark results worse), and `--learned off` skips it.
+On a new test set nothing was tuned on, 56 runs of six Colab-notebook scripts (the PyTorch tutorials and d2l.ai, on Colab's sample data), it names the bug (or "clean") **80.4%** of the time. Versions 1 to 3 got 48% to 55% on the same runs. On the older 84-run test it gets 95.2% (v3: 85.7%), but that set has been seen, so quote the Colab number. Against other models given the same features and the same tuning (mean of 5 seeds), it ties with a random forest 500 times its size on the Colab test (79.6% against 79.3%). The rules alone get 57%. It flags 5 of 47 healthy test runs. Because it now helps (on the tuning scripts, right cause first 47 of 54 instead of 32, and no healthy script changed), `fix` and `diagnose` let it take part by default: a confident guess becomes a finding and its probabilities nudge the ranking of causes. `--learned advisory` only shows the guess, and `--learned off` skips it. Every patch still has to pass both gates.
+
+![Every version on the same scripts](docs/images/all_versions.png)
 
 ![Leaderboard](docs/images/leaderboard.png)
 
-How it was built, the hand-written test set, every model it was compared with and why it is advisory: [docs/learned_classifier.md](docs/learned_classifier.md).
+How it was built, the Colab scripts, the label check, every model and version it was compared with, and how often the test set was looked at: [docs/learned_classifier.md](docs/learned_classifier.md).
 
 ### 2. Live Runtime Monitoring (`monitor`)
 Runs a training script under PyTorch inspection hooks to catch gradient explosions, loss divergence, frozen layers and more:
@@ -302,15 +304,28 @@ Every `fix` run now ends with a `Time:` line, and the `--json` result has a `tim
 
 Benchmark 01 offline, Apple M2, 8 cores: **63 s → 22 s**, with the same accepted patch and the same p-value (0.0052). Benchmark 04: 61 s → 21 s (p = 0.00035 both times).
 
-### Against the previous version
+### Every version on the same scripts
 
-`examples/compare_versions.py` runs two checkouts of the debugger on the same 93 scripts (the blind benchmarks with their healthy twins, and the 58-run hand-written test set), offline, each with its own `fix --dry-run --no-llm` and a fresh memory, back to back on one machine. Against the version in DLDebugger (`0619721`):
+`examples/compare_versions.py` runs checkouts of the debugger on the same 149 scripts, offline, each with its own `fix --dry-run --no-llm` and a fresh memory, back to back on one machine. The scripts are the blind benchmarks with their healthy twins, the 58-run hand-written test set, and the 56-run Colab test set. The versions are Shreyas's (DLDebugger, `0619721`), v1 (`0728d71`), v3 (`b7179ad`) and v4.
+
+![Every version on the same scripts](docs/images/all_versions.png)
 
 ![Version comparison](docs/images/versions.png)
 
-The decisions are the same (right cause first 37 of 64 for both, planted bug fixed 24 of 64 for both, 4 of 29 healthy scripts changed for both), and the run takes 2.1 times less time in total, 2.7 times less per buggy script. The one script decided differently is an autoencoder whose learning rate is too high: the new version accepted a patch for the dead ReLUs that the high learning rate causes, which is a symptom fix, not the planted bug.
+| | Shreyas's | v1 | v3 | v4 |
+|---|---|---|---|---|
+| Right cause ranked first (of 102 buggy) | 56 | 55 | 57 | **81** |
+| Planted bug fixed | 34 | 33 | 34 | **38** |
+| Healthy scripts changed (of 47) | 4 | 4 | 4 | 4 |
+| Median time per buggy script | 40 s | 13 s | 13 s | 13 s |
 
-The comparison also caught a regression: the first version of the faster Gate 2 stopped early when a patch had not helped after 3 seeds, and that cost one repair the old version made (a patch that removes the bug and is not worse needs all 5 seeds to show it). That early stop was removed and the comparison run again; the table above is the second run.
+- **What made the difference.** In v4 the classifier takes part in ranking causes. On the Colab test scripts, which nothing was tuned on, v4 ranks the right cause first for 28 of 38 buggy scripts, against 19 to 20 for the earlier versions.
+- **Repair did not keep up.** The planted bug is fixed in 11 of 38, against 10. The repair recipes, not the diagnosis, are now what limits a fix offline. They do not fit notebook-style code, such as weights updated by hand or training loops inside functions.
+- **Healthy scripts.** Every version changes the same 4 healthy scripts:
+  - the healthy twins of benchmarks 04 and 16 (see Results above);
+  - two healthy versions of `holdout_09`, which clears gradients by hand (`p.grad = None`). The rule detector for a missing `zero_grad()` still fires on them, although the v4 classifier no longer does. The next fix belongs in that rule.
+- **Speed.** All the newer versions are about 3 times faster than Shreyas's.
+- **The old scripts are not blind for v3 and v4.** They were seen when v3 was compared with Shreyas's version. The Colab test scripts were never used to choose anything.
 
 ---
 
@@ -369,12 +384,14 @@ AgenticDLDebugger/
 │   │   └── benchmark_08_unnormalized_inputs.py
 │   ├── new/                          # Benchmarks 09 to 18 (harder bugs)
 │   ├── holdout/                      # 10 hand-written scripts with bugs planted by hand: tuning (01-04) and test (05-10) sets
+│   ├── colab/                        # 17 training scripts from Google Colab notebooks, their bug variants, fetch_sample_data.py
 │   ├── compare_models.py             # The trace classifier against other models; plot_leaderboard.py, plot_comparison.py draw it
-│   ├── compare_versions.py           # Two versions of the debugger on the same scripts; plot_versions.py draws it
+│   ├── compare_classifier_versions.py  # Every classifier version (v1-v4) on the same runs
+│   ├── compare_versions.py           # Every version of the debugger end to end; plot_versions.py, plot_all_versions.py draw it
 │   ├── snippets/                     # Code fragments for `snippet`
 │   ├── benchmark_hooks.py            # Module 1 overhead benchmark
 │   └── evaluate_pipeline.py          # Repair rate and damage rate on the benchmarks
-└── tests/                            # 475 automated tests (pytest)
+└── tests/                            # 483 automated tests (pytest)
 ```
 
 ---
@@ -422,7 +439,8 @@ python -m pytest tests/test_faster_validation.py tests/test_blind_snippet_mutati
 - A script that needs its own command-line arguments must be given them after `--`.
 - `snippet` only reads code. Its findings are not validated, and a rule that needs to see where a variable came from (for example that `criterion` is a `CrossEntropyLoss`) can only fire if that line is in the snippet.
 - Gate 2 decides whether a script is safe to run in parallel from its source (file writes, downloads). A script that writes files some other way should be run with `MultiseedAgent(workers=1)`.
-- The trace classifier was trained on generated scripts and knows nine bugs; see [docs/learned_classifier.md](docs/learned_classifier.md) for how well it does on hand-written ones.
+- The trace classifier knows nine bugs. On scripts from Colab notebooks it is right about 4 times in 5, and shuffled labels in a slowly learning script are its weakest case; see [docs/learned_classifier.md](docs/learned_classifier.md).
+- Scripts that update their weights by hand, with no optimizer, are traced and stopped on budget, but the runtime monitor's detectors still rely on optimizer hooks, so the pipeline finds fewer bugs in them.
 
 ---
 

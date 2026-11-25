@@ -7,7 +7,9 @@ It works on any script, because nothing in the script has to cooperate:
 * every seed the script sets is shifted by the run's seed, so a hard-coded
   `torch.manual_seed(42)` still gives different runs across seeds;
 * losses are read from `backward()` and steps from a global optimizer hook;
-* `--max-steps` stops training cleanly, which keeps CPU-only runs short;
+* `--max-steps` stops training cleanly, which keeps CPU-only runs short. A script
+  that updates its weights by hand, with no optimizer, is stopped after that many
+  `backward()` calls instead;
 * `--save-weights` writes the trained models' tensors to a file when the run ends,
   so the weights can be inspected without importing the script anywhere else;
 * `--trace` also records the training-trace statistics the learned bug classifier
@@ -43,8 +45,10 @@ class Recorder:
             self.tracer = Tracer()
         self.models: Dict[int, Any] = {}  # id(model) -> model an optimizer trained, kept alive until the report
         self._optimizers_seen: set = set()
+        self._optimizers_used = False  # an optimizer has stepped, so --max-steps counts optimizer steps
         self.losses: List[float] = []
         self.steps = 0
+        self.backward_calls = 0
         self.params: Dict[int, bool] = {}  # id(trainable parameter) -> ever had a non-zero gradient
         self._rng: Optional[tuple] = None
         self._loaders: Dict[int, Any] = {}
@@ -64,9 +68,18 @@ class Recorder:
             return original_seed(int(value) + recorder.seed)
 
         def backward(tensor: Any, *args: Any, **kwargs: Any) -> Any:
+            recorder.backward_calls += 1
+            if recorder.max_steps is not None and not recorder._optimizers_used \
+                    and recorder.backward_calls > recorder.max_steps:  # weights updated by hand: count backward calls
+                raise recorder._stop(f"step budget of {recorder.max_steps} backward passes reached")
             if tensor.numel() == 1 and tensor.is_floating_point() and len(recorder.losses) < MAX_LOSSES:
                 recorder.losses.append(float(tensor.detach()))
-            return original_backward(tensor, *args, **kwargs)
+            if recorder.tracer is not None:
+                recorder.tracer.before_backward(tensor)
+            out = original_backward(tensor, *args, **kwargs)
+            if recorder.tracer is not None:
+                recorder.tracer.after_backward(tensor)
+            return out
 
         torch.manual_seed = manual_seed
         torch.Tensor.backward = backward
@@ -123,6 +136,7 @@ class Recorder:
                 self.models.setdefault(id(module), module)
 
     def _before_step(self, optimizer: Any, args: Any, kwargs: Any) -> None:
+        self._optimizers_used = True
         if self.keep_models and id(optimizer) not in self._optimizers_seen:
             self._optimizers_seen.add(id(optimizer))
             self._remember_models(optimizer)
@@ -193,7 +207,7 @@ class Recorder:
         finite = [v for v in values if math.isfinite(v)]
         head = sum(finite[:3]) / max(1, len(finite[:3])) if finite else None
         tail = sum(finite[-3:]) / max(1, len(finite[-3:])) if finite else None
-        report = {"steps": self.steps, "losses": self.losses, "nonfinite_losses": len(values) - len(finite),
+        report = {"steps": self.steps, "backward_calls": self.backward_calls, "losses": self.losses, "nonfinite_losses": len(values) - len(finite),
                   "initial_loss": head, "final_loss": tail,
                   "loss_ratio": (tail / head) if finite and head else None,
                   "params_trainable": len(self.params), "params_with_gradient": sum(self.params.values())}

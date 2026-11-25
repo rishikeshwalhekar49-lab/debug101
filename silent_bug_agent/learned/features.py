@@ -4,12 +4,20 @@ Every feature is scale-free (a ratio, a fraction or a log), so a model trained o
 small generated scripts can say something about other scripts too. A value that
 the run could not measure is 0, and a matching `has_*` feature says whether it
 was measured.
+
+Version 4 adds the backward-pass measurements of `trace.py` (gradients left over
+from before an update, the step size actually taken, first-to-last layer gradients,
+saturation, the optimizer's kind), a few more points of the loss curve, and the
+facts read from the code (`code.py`). Scripts with no optimizer get their gradient
+and step statistics from the backward passes instead.
 """
 
 from __future__ import annotations
 
 import math
 from typing import Any, Dict, List, Optional, Sequence
+
+from .code import CODE_FEATURES, code_features
 
 FEATURES: List[str] = [
     "loss_log_ratio",  # log(final / initial loss)
@@ -48,6 +56,25 @@ FEATURES: List[str] = [
     "val_end_vs_chance",  # log10(last validation loss / chance level)
     "has_validation_loss",
 ]
+V3_FEATURES = list(FEATURES)
+TRACE_V4: List[str] = [
+    "stale_after_update",  # share of updates after which the next backward pass still found old gradients
+    "stale_any",  # share of backward passes that found old gradients (also legitimate gradient accumulation)
+    "has_backward_checks",
+    "log_step_over_grad",  # log10(median |weight change| / |gradient|): the step size actually used
+    "first_last_grad",  # median log10(first weight's gradient norm / last weight's)
+    "saturated_fraction",  # share of tanh/sigmoid outputs within 1% of their limits
+    "has_saturating",
+    "relu_zero_all",  # share of zeros among F.relu/torch.relu/nn.ReLU outputs
+    "has_relu_all",
+    "adaptive_optimizer",  # Adam, RMSprop and the like
+    "manual_updates",  # weights changed with no optimizer: updated by hand
+    "loss_q25",  # log(loss a quarter of the way in / initial loss)
+    "loss_q50",
+    "loss_q75",
+    "loss_min_ratio",  # log(lowest loss / initial loss)
+]
+FEATURES = V3_FEATURES + TRACE_V4 + CODE_FEATURES
 CHANCE = {"binary_cross_entropy": 0.6931, "binary_cross_entropy_with_logits": 0.6931}
 
 
@@ -92,19 +119,57 @@ def _loss_features(calls: List[Dict[str, Any]]) -> Dict[str, float]:
     }
 
 
-def vectorize(report: Dict[str, Any]) -> List[float]:
-    """Feature vector for one `script_runner --trace` report (its `losses` plus its `trace`)."""
+def _median(values: Sequence[float]) -> Optional[float]:
+    values = sorted(v for v in values if v is not None and math.isfinite(v))
+    return values[len(values) // 2] if values else None
+
+
+def _v4_features(trace: Dict[str, Any], positive: List[float]) -> Dict[str, float]:
+    head = _mean(positive[:3])
+
+    def at(fraction: float) -> float:
+        if not positive or not head:
+            return 0.0
+        i = min(len(positive) - 1, int(fraction * (len(positive) - 1)))
+        window = positive[max(0, i - 1):i + 2]
+        return max(-10.0, min(10.0, math.log(_mean(window) / head)))
+
+    step = _median(trace.get("bw_step_over_grad") or [])
+    ratio = _median(trace.get("layer_grad_ratios") or [])
+    saturated, relu = trace.get("saturated_fraction"), trace.get("relu_zero_all")
+    return {
+        "stale_after_update": ((trace.get("stale_after_update") or 0) / trace["updates_seen"]
+                               if trace.get("updates_seen") else 0.0),
+        "stale_any": (trace.get("stale_any") or 0) / trace["stale_checks"] if trace.get("stale_checks") else 0.0,
+        "has_backward_checks": 1.0 if trace.get("stale_checks") else 0.0,
+        "log_step_over_grad": _log10(step) if step else 0.0,
+        "first_last_grad": max(-6.0, min(6.0, ratio)) if ratio is not None else 0.0,
+        "saturated_fraction": float(saturated) if saturated is not None else 0.0,
+        "has_saturating": 1.0 if saturated is not None else 0.0,
+        "relu_zero_all": float(relu) if relu is not None else 0.0,
+        "has_relu_all": 1.0 if relu is not None else 0.0,
+        "adaptive_optimizer": 1.0 if trace.get("adaptive_optimizer") else 0.0,
+        "manual_updates": 1.0 if not trace.get("optimizer_kinds") and trace.get("updates_seen") else 0.0,
+        "loss_q25": at(0.25), "loss_q50": at(0.5), "loss_q75": at(0.75),
+        "loss_min_ratio": max(-10.0, min(10.0, math.log(min(positive) / head))) if positive and head else 0.0,
+    }
+
+
+def vectorize(report: Dict[str, Any], source: Optional[str] = None) -> List[float]:
+    """Feature vector for one `script_runner --trace` report (its `losses` plus its `trace`) and the script's code."""
     trace = report.get("trace") or {}
     losses = [float(v) for v in report.get("losses") or []]
     finite = [v for v in losses if math.isfinite(v)]
     positive = [v for v in finite if v > 0]
     head, tail = _mean(positive[:3]), _mean(positive[-3:])
-    grads = [g for g in trace.get("grad_norms") or [] if math.isfinite(g)]
+    # with no optimizer, the gradient and step statistics come from the backward passes
+    raw_grads = trace.get("grad_norms") or trace.get("bw_grad_norms") or []
+    grads = [g for g in raw_grads if math.isfinite(g)]
     first, last = _mean(grads[:5]), _mean(grads[-5:])
     grad_mean = _mean(grads)
     grad_std = math.sqrt(_mean([(g - grad_mean) ** 2 for g in grads])) if grads else 0.0
-    updates = [u for u in trace.get("update_ratios") or [] if math.isfinite(u)]
-    steps = max(1, len(trace.get("grad_norms") or []))  # every step, including ones whose gradient was NaN
+    updates = [u for u in trace.get("update_ratios") or trace.get("bw_update_ratios") or [] if math.isfinite(u)]
+    steps = max(1, len(raw_grads))  # every step, including ones whose gradient was NaN
     measured = trace.get("measured_outputs") or 0
     forwards = trace.get("forwards") or 0
     no_grad = trace.get("no_grad_forwards") or 0
@@ -140,6 +205,8 @@ def vectorize(report: Dict[str, Any]) -> List[float]:
         "bias_mean": math.tanh(float(bias)) if bias is not None else 0.0,
         "has_updates": 1.0 if updates else 0.0,
         **_loss_features(trace.get("loss_calls") or []),
+        **_v4_features(trace, positive),
+        **(code_features(source) if source is not None else {name: 0.0 for name in CODE_FEATURES}),
     }
     # a diverged run can leave NaN weights (so a NaN mean bias): `loss_nonfinite` already says it diverged
     return [float(values[name]) if math.isfinite(values[name]) else 0.0 for name in FEATURES]

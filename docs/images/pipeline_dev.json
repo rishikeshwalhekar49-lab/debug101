@@ -1,0 +1,2977 @@
+{
+  "versions": {
+    "v3": {
+      "path": "checkout of b7179ad",
+      "arguments": []
+    },
+    "v4": {
+      "path": "this repository",
+      "arguments": []
+    },
+    "v4active": {
+      "path": "this repository",
+      "arguments": [
+        "--learned",
+        "active"
+      ]
+    }
+  },
+  "rows": [
+    {
+      "name": "colab_02_training_with_pytorch (clean)",
+      "label": "clean",
+      "set": "Colab dev",
+      "v3": {
+        "seconds": 7.47,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "causes": [],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "label_data_misalignment"
+      },
+      "v4": {
+        "seconds": 7.9,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "causes": [],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "clean"
+      },
+      "v4active": {
+        "seconds": 7.34,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "causes": [],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "clean"
+      }
+    },
+    {
+      "name": "colab_02_training_with_pytorch (clean) #2",
+      "label": "clean",
+      "set": "Colab dev",
+      "v3": {
+        "seconds": 7.63,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "causes": [],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "label_data_misalignment"
+      },
+      "v4": {
+        "seconds": 8.0,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "causes": [],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "clean"
+      },
+      "v4active": {
+        "seconds": 7.53,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "causes": [],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "clean"
+      }
+    },
+    {
+      "name": "colab_02_training_with_pytorch (clean) #3",
+      "label": "clean",
+      "set": "Colab dev",
+      "v3": {
+        "seconds": 7.52,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "causes": [],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "label_data_misalignment"
+      },
+      "v4": {
+        "seconds": 7.76,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "causes": [],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "clean"
+      },
+      "v4active": {
+        "seconds": 7.38,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "causes": [],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "clean"
+      }
+    },
+    {
+      "name": "colab_02_training_with_pytorch (missing_zero_grad)",
+      "label": "missing_zero_grad",
+      "set": "Colab dev",
+      "v3": {
+        "seconds": 27.24,
+        "outcome": "fixed",
+        "top_cause": "missing_zero_grad",
+        "causes": [
+          "missing_zero_grad",
+          "learning_rate_misconfigured",
+          "dead_relu"
+        ],
+        "patched": true,
+        "fixed_bug": "missing_zero_grad",
+        "learned": "missing_zero_grad"
+      },
+      "v4": {
+        "seconds": 27.21,
+        "outcome": "fixed",
+        "top_cause": "missing_zero_grad",
+        "causes": [
+          "missing_zero_grad",
+          "learning_rate_misconfigured",
+          "dead_relu",
+          "exploding_gradients"
+        ],
+        "patched": true,
+        "fixed_bug": "missing_zero_grad",
+        "learned": "missing_zero_grad"
+      },
+      "v4active": {
+        "seconds": 28.8,
+        "outcome": "fixed",
+        "top_cause": "missing_zero_grad",
+        "causes": [
+          "missing_zero_grad",
+          "learning_rate_misconfigured",
+          "dead_relu",
+          "exploding_gradients"
+        ],
+        "patched": true,
+        "fixed_bug": "missing_zero_grad",
+        "learned": "missing_zero_grad"
+      }
+    },
+    {
+      "name": "colab_02_training_with_pytorch (softmax_before_cross_entropy)",
+      "label": "softmax_before_cross_entropy",
+      "set": "Colab dev",
+      "v3": {
+        "seconds": 27.2,
+        "outcome": "fixed",
+        "top_cause": "softmax_before_cross_entropy",
+        "causes": [
+          "softmax_before_cross_entropy",
+          "learning_rate_misconfigured"
+        ],
+        "patched": true,
+        "fixed_bug": "softmax_before_cross_entropy",
+        "learned": "softmax_before_cross_entropy"
+      },
+      "v4": {
+        "seconds": 27.25,
+        "outcome": "fixed",
+        "top_cause": "softmax_before_cross_entropy",
+        "causes": [
+          "softmax_before_cross_entropy",
+          "learning_rate_misconfigured"
+        ],
+        "patched": true,
+        "fixed_bug": "softmax_before_cross_entropy",
+        "learned": "softmax_before_cross_entropy"
+      },
+      "v4active": {
+        "seconds": 28.74,
+        "outcome": "fixed",
+        "top_cause": "softmax_before_cross_entropy",
+        "causes": [
+          "softmax_before_cross_entropy",
+          "learning_rate_misconfigured"
+        ],
+        "patched": true,
+        "fixed_bug": "softmax_before_cross_entropy",
+        "learned": "softmax_before_cross_entropy"
+      }
+    },
+    {
+      "name": "colab_02_training_with_pytorch (wrong_loss_reduction)",
+      "label": "wrong_loss_reduction",
+      "set": "Colab dev",
+      "v3": {
+        "seconds": 36.59,
+        "outcome": "fixed",
+        "top_cause": "dead_relu",
+        "causes": [
+          "dead_relu",
+          "vanishing_gradients",
+          "wrong_loss_reduction",
+          "learning_rate_misconfigured"
+        ],
+        "patched": true,
+        "fixed_bug": "dead_relu",
+        "learned": "wrong_loss_reduction"
+      },
+      "v4": {
+        "seconds": 41.57,
+        "outcome": "fixed",
+        "top_cause": "dead_relu",
+        "causes": [
+          "dead_relu",
+          "vanishing_gradients",
+          "wrong_loss_reduction",
+          "learning_rate_misconfigured"
+        ],
+        "patched": true,
+        "fixed_bug": "dead_relu",
+        "learned": "wrong_loss_reduction"
+      },
+      "v4active": {
+        "seconds": 36.4,
+        "outcome": "fixed",
+        "top_cause": "wrong_loss_reduction",
+        "causes": [
+          "wrong_loss_reduction",
+          "dead_relu",
+          "vanishing_gradients",
+          "learning_rate_misconfigured"
+        ],
+        "patched": true,
+        "fixed_bug": "dead_relu",
+        "learned": "wrong_loss_reduction"
+      }
+    },
+    {
+      "name": "colab_02_training_with_pytorch (learning_rate_misconfigured)",
+      "label": "learning_rate_misconfigured",
+      "set": "Colab dev",
+      "v3": {
+        "seconds": 36.0,
+        "outcome": "fixed",
+        "top_cause": "dead_relu",
+        "causes": [
+          "dead_relu",
+          "learning_rate_misconfigured",
+          "vanishing_gradients"
+        ],
+        "patched": true,
+        "fixed_bug": "dead_relu",
+        "learned": "learning_rate_misconfigured"
+      },
+      "v4": {
+        "seconds": 25.1,
+        "outcome": "fixed",
+        "top_cause": "learning_rate_misconfigured",
+        "causes": [
+          "learning_rate_misconfigured",
+          "exploding_gradients",
+          "dead_relu",
+          "vanishing_gradients"
+        ],
+        "patched": true,
+        "fixed_bug": "learning_rate_misconfigured",
+        "learned": "learning_rate_misconfigured"
+      },
+      "v4active": {
+        "seconds": 28.0,
+        "outcome": "fixed",
+        "top_cause": "learning_rate_misconfigured",
+        "causes": [
+          "learning_rate_misconfigured",
+          "exploding_gradients",
+          "dead_relu"
+        ],
+        "patched": true,
+        "fixed_bug": "learning_rate_misconfigured",
+        "learned": "learning_rate_misconfigured"
+      }
+    },
+    {
+      "name": "colab_02_training_with_pytorch (frozen_layer_no_grad)",
+      "label": "frozen_layer_no_grad",
+      "set": "Colab dev",
+      "v3": {
+        "seconds": 12.41,
+        "outcome": "not_fixed",
+        "top_cause": "learning_rate_misconfigured",
+        "causes": [
+          "learning_rate_misconfigured"
+        ],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "frozen_layer_no_grad"
+      },
+      "v4": {
+        "seconds": 11.51,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "causes": [],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "frozen_layer_no_grad"
+      },
+      "v4active": {
+        "seconds": 10.12,
+        "outcome": "not_fixed",
+        "top_cause": "frozen_layer_no_grad",
+        "causes": [
+          "frozen_layer_no_grad"
+        ],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "frozen_layer_no_grad"
+      }
+    },
+    {
+      "name": "colab_02_training_with_pytorch (dead_relu)",
+      "label": "dead_relu",
+      "set": "Colab dev",
+      "v3": {
+        "seconds": 11.78,
+        "outcome": "not_fixed",
+        "top_cause": "frozen_layer_no_grad",
+        "causes": [
+          "frozen_layer_no_grad",
+          "learning_rate_misconfigured",
+          "vanishing_gradients"
+        ],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "dead_relu"
+      },
+      "v4": {
+        "seconds": 16.36,
+        "outcome": "not_fixed",
+        "top_cause": "frozen_layer_no_grad",
+        "causes": [
+          "frozen_layer_no_grad",
+          "learning_rate_misconfigured",
+          "vanishing_gradients"
+        ],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "dead_relu"
+      },
+      "v4active": {
+        "seconds": 27.92,
+        "outcome": "fixed",
+        "top_cause": "dead_relu",
+        "causes": [
+          "dead_relu",
+          "frozen_layer_no_grad",
+          "vanishing_gradients",
+          "learning_rate_misconfigured"
+        ],
+        "patched": true,
+        "fixed_bug": "dead_relu",
+        "learned": "dead_relu"
+      }
+    },
+    {
+      "name": "colab_02_training_with_pytorch (non_normalized_inputs)",
+      "label": "non_normalized_inputs",
+      "set": "Colab dev",
+      "v3": {
+        "seconds": 24.88,
+        "outcome": "fixed",
+        "top_cause": "learning_rate_misconfigured",
+        "causes": [
+          "learning_rate_misconfigured"
+        ],
+        "patched": true,
+        "fixed_bug": "learning_rate_misconfigured",
+        "learned": "non_normalized_inputs"
+      },
+      "v4": {
+        "seconds": 38.35,
+        "outcome": "fixed",
+        "top_cause": "dead_relu",
+        "causes": [
+          "dead_relu"
+        ],
+        "patched": true,
+        "fixed_bug": "dead_relu",
+        "learned": "non_normalized_inputs"
+      },
+      "v4active": {
+        "seconds": 30.09,
+        "outcome": "fixed",
+        "top_cause": "dead_relu",
+        "causes": [
+          "dead_relu",
+          "vanishing_gradients"
+        ],
+        "patched": true,
+        "fixed_bug": "dead_relu",
+        "learned": "non_normalized_inputs"
+      }
+    },
+    {
+      "name": "colab_02_training_with_pytorch (label_data_misalignment)",
+      "label": "label_data_misalignment",
+      "set": "Colab dev",
+      "v3": {
+        "seconds": 12.04,
+        "outcome": "not_fixed",
+        "top_cause": "learning_rate_misconfigured",
+        "causes": [
+          "learning_rate_misconfigured"
+        ],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "label_data_misalignment"
+      },
+      "v4": {
+        "seconds": 11.93,
+        "outcome": "not_fixed",
+        "top_cause": "learning_rate_misconfigured",
+        "causes": [
+          "learning_rate_misconfigured"
+        ],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "clean"
+      },
+      "v4active": {
+        "seconds": 12.35,
+        "outcome": "not_fixed",
+        "top_cause": "learning_rate_misconfigured",
+        "causes": [
+          "learning_rate_misconfigured"
+        ],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "clean"
+      }
+    },
+    {
+      "name": "colab_07_polynomial_fit (clean)",
+      "label": "clean",
+      "set": "Colab dev",
+      "v3": {
+        "seconds": 8.19,
+        "outcome": "not_fixed",
+        "top_cause": "wrong_loss_reduction",
+        "causes": [
+          "wrong_loss_reduction"
+        ],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "clean"
+      },
+      "v4": {
+        "seconds": 6.29,
+        "outcome": "not_fixed",
+        "top_cause": "wrong_loss_reduction",
+        "causes": [
+          "wrong_loss_reduction"
+        ],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "wrong_loss_reduction"
+      },
+      "v4active": {
+        "seconds": 7.64,
+        "outcome": "not_fixed",
+        "top_cause": "wrong_loss_reduction",
+        "causes": [
+          "wrong_loss_reduction"
+        ],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "wrong_loss_reduction"
+      }
+    },
+    {
+      "name": "colab_07_polynomial_fit (clean) #2",
+      "label": "clean",
+      "set": "Colab dev",
+      "v3": {
+        "seconds": 7.94,
+        "outcome": "not_fixed",
+        "top_cause": "wrong_loss_reduction",
+        "causes": [
+          "wrong_loss_reduction"
+        ],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "clean"
+      },
+      "v4": {
+        "seconds": 7.2,
+        "outcome": "not_fixed",
+        "top_cause": "wrong_loss_reduction",
+        "causes": [
+          "wrong_loss_reduction"
+        ],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "wrong_loss_reduction"
+      },
+      "v4active": {
+        "seconds": 6.65,
+        "outcome": "not_fixed",
+        "top_cause": "wrong_loss_reduction",
+        "causes": [
+          "wrong_loss_reduction"
+        ],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "wrong_loss_reduction"
+      }
+    },
+    {
+      "name": "colab_07_polynomial_fit (clean) #3",
+      "label": "clean",
+      "set": "Colab dev",
+      "v3": {
+        "seconds": 6.8,
+        "outcome": "not_fixed",
+        "top_cause": "wrong_loss_reduction",
+        "causes": [
+          "wrong_loss_reduction"
+        ],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "clean"
+      },
+      "v4": {
+        "seconds": 6.58,
+        "outcome": "not_fixed",
+        "top_cause": "wrong_loss_reduction",
+        "causes": [
+          "wrong_loss_reduction"
+        ],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "wrong_loss_reduction"
+      },
+      "v4active": {
+        "seconds": 6.77,
+        "outcome": "not_fixed",
+        "top_cause": "wrong_loss_reduction",
+        "causes": [
+          "wrong_loss_reduction"
+        ],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "wrong_loss_reduction"
+      }
+    },
+    {
+      "name": "colab_07_polynomial_fit (missing_zero_grad)",
+      "label": "missing_zero_grad",
+      "set": "Colab dev",
+      "v3": {
+        "seconds": 6.93,
+        "outcome": "not_fixed",
+        "top_cause": "missing_zero_grad",
+        "causes": [
+          "missing_zero_grad",
+          "wrong_loss_reduction"
+        ],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "wrong_loss_reduction"
+      },
+      "v4": {
+        "seconds": 6.62,
+        "outcome": "not_fixed",
+        "top_cause": "missing_zero_grad",
+        "causes": [
+          "missing_zero_grad",
+          "wrong_loss_reduction"
+        ],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "missing_zero_grad"
+      },
+      "v4active": {
+        "seconds": 6.59,
+        "outcome": "not_fixed",
+        "top_cause": "missing_zero_grad",
+        "causes": [
+          "missing_zero_grad",
+          "wrong_loss_reduction"
+        ],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "missing_zero_grad"
+      }
+    },
+    {
+      "name": "colab_07_polynomial_fit (learning_rate_misconfigured)",
+      "label": "learning_rate_misconfigured",
+      "set": "Colab dev",
+      "v3": {
+        "seconds": 6.74,
+        "outcome": "not_fixed",
+        "top_cause": "wrong_loss_reduction",
+        "causes": [
+          "wrong_loss_reduction"
+        ],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "label_data_misalignment"
+      },
+      "v4": {
+        "seconds": 6.75,
+        "outcome": "not_fixed",
+        "top_cause": "wrong_loss_reduction",
+        "causes": [
+          "wrong_loss_reduction"
+        ],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "wrong_loss_reduction"
+      },
+      "v4active": {
+        "seconds": 6.57,
+        "outcome": "not_fixed",
+        "top_cause": "wrong_loss_reduction",
+        "causes": [
+          "wrong_loss_reduction"
+        ],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "wrong_loss_reduction"
+      }
+    },
+    {
+      "name": "colab_07_polynomial_fit (non_normalized_inputs)",
+      "label": "non_normalized_inputs",
+      "set": "Colab dev",
+      "v3": {
+        "seconds": 6.85,
+        "outcome": "not_fixed",
+        "top_cause": "wrong_loss_reduction",
+        "causes": [
+          "wrong_loss_reduction"
+        ],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "clean"
+      },
+      "v4": {
+        "seconds": 6.54,
+        "outcome": "not_fixed",
+        "top_cause": "wrong_loss_reduction",
+        "causes": [
+          "wrong_loss_reduction"
+        ],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "non_normalized_inputs"
+      },
+      "v4active": {
+        "seconds": 7.73,
+        "outcome": "not_fixed",
+        "top_cause": "non_normalized_inputs",
+        "causes": [
+          "non_normalized_inputs",
+          "wrong_loss_reduction"
+        ],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "non_normalized_inputs"
+      }
+    },
+    {
+      "name": "colab_07_polynomial_fit (label_data_misalignment)",
+      "label": "label_data_misalignment",
+      "set": "Colab dev",
+      "v3": {
+        "seconds": 6.78,
+        "outcome": "not_fixed",
+        "top_cause": "wrong_loss_reduction",
+        "causes": [
+          "wrong_loss_reduction"
+        ],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "clean"
+      },
+      "v4": {
+        "seconds": 6.49,
+        "outcome": "not_fixed",
+        "top_cause": "wrong_loss_reduction",
+        "causes": [
+          "wrong_loss_reduction"
+        ],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "wrong_loss_reduction"
+      },
+      "v4active": {
+        "seconds": 6.61,
+        "outcome": "not_fixed",
+        "top_cause": "wrong_loss_reduction",
+        "causes": [
+          "wrong_loss_reduction"
+        ],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "wrong_loss_reduction"
+      }
+    },
+    {
+      "name": "colab_11_text_classification (clean)",
+      "label": "clean",
+      "set": "Colab dev",
+      "v3": {
+        "seconds": 6.84,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "causes": [],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "learning_rate_misconfigured"
+      },
+      "v4": {
+        "seconds": 6.9,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "causes": [],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "clean"
+      },
+      "v4active": {
+        "seconds": 6.97,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "causes": [],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "clean"
+      }
+    },
+    {
+      "name": "colab_11_text_classification (clean) #2",
+      "label": "clean",
+      "set": "Colab dev",
+      "v3": {
+        "seconds": 7.04,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "causes": [],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "learning_rate_misconfigured"
+      },
+      "v4": {
+        "seconds": 7.22,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "causes": [],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "clean"
+      },
+      "v4active": {
+        "seconds": 8.0,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "causes": [],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "clean"
+      }
+    },
+    {
+      "name": "colab_11_text_classification (clean) #3",
+      "label": "clean",
+      "set": "Colab dev",
+      "v3": {
+        "seconds": 6.95,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "causes": [],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "learning_rate_misconfigured"
+      },
+      "v4": {
+        "seconds": 6.98,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "causes": [],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "clean"
+      },
+      "v4active": {
+        "seconds": 8.12,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "causes": [],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "clean"
+      }
+    },
+    {
+      "name": "colab_11_text_classification (missing_zero_grad)",
+      "label": "missing_zero_grad",
+      "set": "Colab dev",
+      "v3": {
+        "seconds": 17.87,
+        "outcome": "not_fixed",
+        "top_cause": "missing_zero_grad",
+        "causes": [
+          "missing_zero_grad"
+        ],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "missing_zero_grad"
+      },
+      "v4": {
+        "seconds": 18.91,
+        "outcome": "not_fixed",
+        "top_cause": "missing_zero_grad",
+        "causes": [
+          "missing_zero_grad"
+        ],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "missing_zero_grad"
+      },
+      "v4active": {
+        "seconds": 18.55,
+        "outcome": "not_fixed",
+        "top_cause": "missing_zero_grad",
+        "causes": [
+          "missing_zero_grad"
+        ],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "missing_zero_grad"
+      }
+    },
+    {
+      "name": "colab_11_text_classification (softmax_before_cross_entropy)",
+      "label": "softmax_before_cross_entropy",
+      "set": "Colab dev",
+      "v3": {
+        "seconds": 16.29,
+        "outcome": "fixed",
+        "top_cause": "softmax_before_cross_entropy",
+        "causes": [
+          "softmax_before_cross_entropy"
+        ],
+        "patched": true,
+        "fixed_bug": "softmax_before_cross_entropy",
+        "learned": "softmax_before_cross_entropy"
+      },
+      "v4": {
+        "seconds": 15.43,
+        "outcome": "fixed",
+        "top_cause": "softmax_before_cross_entropy",
+        "causes": [
+          "softmax_before_cross_entropy"
+        ],
+        "patched": true,
+        "fixed_bug": "softmax_before_cross_entropy",
+        "learned": "softmax_before_cross_entropy"
+      },
+      "v4active": {
+        "seconds": 17.47,
+        "outcome": "fixed",
+        "top_cause": "softmax_before_cross_entropy",
+        "causes": [
+          "softmax_before_cross_entropy"
+        ],
+        "patched": true,
+        "fixed_bug": "softmax_before_cross_entropy",
+        "learned": "softmax_before_cross_entropy"
+      }
+    },
+    {
+      "name": "colab_11_text_classification (learning_rate_misconfigured)",
+      "label": "learning_rate_misconfigured",
+      "set": "Colab dev",
+      "v3": {
+        "seconds": 10.15,
+        "outcome": "not_fixed",
+        "top_cause": "learning_rate_misconfigured",
+        "causes": [
+          "learning_rate_misconfigured"
+        ],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "label_data_misalignment"
+      },
+      "v4": {
+        "seconds": 11.39,
+        "outcome": "not_fixed",
+        "top_cause": "learning_rate_misconfigured",
+        "causes": [
+          "learning_rate_misconfigured"
+        ],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "clean"
+      },
+      "v4active": {
+        "seconds": 10.29,
+        "outcome": "not_fixed",
+        "top_cause": "learning_rate_misconfigured",
+        "causes": [
+          "learning_rate_misconfigured"
+        ],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "clean"
+      }
+    },
+    {
+      "name": "colab_11_text_classification (frozen_layer_no_grad)",
+      "label": "frozen_layer_no_grad",
+      "set": "Colab dev",
+      "v3": {
+        "seconds": 17.37,
+        "outcome": "fixed",
+        "top_cause": "frozen_layer_no_grad",
+        "causes": [
+          "frozen_layer_no_grad"
+        ],
+        "patched": true,
+        "fixed_bug": "frozen_layer_no_grad",
+        "learned": "frozen_layer_no_grad"
+      },
+      "v4": {
+        "seconds": 15.09,
+        "outcome": "fixed",
+        "top_cause": "frozen_layer_no_grad",
+        "causes": [
+          "frozen_layer_no_grad"
+        ],
+        "patched": true,
+        "fixed_bug": "frozen_layer_no_grad",
+        "learned": "frozen_layer_no_grad"
+      },
+      "v4active": {
+        "seconds": 15.76,
+        "outcome": "fixed",
+        "top_cause": "frozen_layer_no_grad",
+        "causes": [
+          "frozen_layer_no_grad"
+        ],
+        "patched": true,
+        "fixed_bug": "frozen_layer_no_grad",
+        "learned": "frozen_layer_no_grad"
+      }
+    },
+    {
+      "name": "colab_11_text_classification (label_data_misalignment)",
+      "label": "label_data_misalignment",
+      "set": "Colab dev",
+      "v3": {
+        "seconds": 11.51,
+        "outcome": "not_fixed",
+        "top_cause": "learning_rate_misconfigured",
+        "causes": [
+          "learning_rate_misconfigured"
+        ],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "learning_rate_misconfigured"
+      },
+      "v4": {
+        "seconds": 10.63,
+        "outcome": "not_fixed",
+        "top_cause": "learning_rate_misconfigured",
+        "causes": [
+          "learning_rate_misconfigured"
+        ],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "learning_rate_misconfigured"
+      },
+      "v4active": {
+        "seconds": 9.96,
+        "outcome": "not_fixed",
+        "top_cause": "learning_rate_misconfigured",
+        "causes": [
+          "learning_rate_misconfigured"
+        ],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "learning_rate_misconfigured"
+      }
+    },
+    {
+      "name": "colab_17_housing_binary (clean)",
+      "label": "clean",
+      "set": "Colab dev",
+      "v3": {
+        "seconds": 7.25,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "causes": [],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "clean"
+      },
+      "v4": {
+        "seconds": 8.46,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "causes": [],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "clean"
+      },
+      "v4active": {
+        "seconds": 7.82,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "causes": [],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "clean"
+      }
+    },
+    {
+      "name": "colab_17_housing_binary (clean) #2",
+      "label": "clean",
+      "set": "Colab dev",
+      "v3": {
+        "seconds": 8.94,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "causes": [],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "clean"
+      },
+      "v4": {
+        "seconds": 8.09,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "causes": [],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "clean"
+      },
+      "v4active": {
+        "seconds": 9.67,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "causes": [],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "clean"
+      }
+    },
+    {
+      "name": "colab_17_housing_binary (clean) #3",
+      "label": "clean",
+      "set": "Colab dev",
+      "v3": {
+        "seconds": 8.65,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "causes": [],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "label_data_misalignment"
+      },
+      "v4": {
+        "seconds": 7.97,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "causes": [],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "clean"
+      },
+      "v4active": {
+        "seconds": 9.64,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "causes": [],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "clean"
+      }
+    },
+    {
+      "name": "colab_17_housing_binary (missing_zero_grad)",
+      "label": "missing_zero_grad",
+      "set": "Colab dev",
+      "v3": {
+        "seconds": 20.7,
+        "outcome": "fixed",
+        "top_cause": "missing_zero_grad",
+        "causes": [
+          "missing_zero_grad",
+          "learning_rate_misconfigured"
+        ],
+        "patched": true,
+        "fixed_bug": "missing_zero_grad",
+        "learned": "missing_zero_grad"
+      },
+      "v4": {
+        "seconds": 25.54,
+        "outcome": "fixed",
+        "top_cause": "missing_zero_grad",
+        "causes": [
+          "missing_zero_grad",
+          "learning_rate_misconfigured"
+        ],
+        "patched": true,
+        "fixed_bug": "missing_zero_grad",
+        "learned": "missing_zero_grad"
+      },
+      "v4active": {
+        "seconds": 24.98,
+        "outcome": "fixed",
+        "top_cause": "missing_zero_grad",
+        "causes": [
+          "missing_zero_grad",
+          "learning_rate_misconfigured"
+        ],
+        "patched": true,
+        "fixed_bug": "missing_zero_grad",
+        "learned": "missing_zero_grad"
+      }
+    },
+    {
+      "name": "colab_17_housing_binary (learning_rate_misconfigured)",
+      "label": "learning_rate_misconfigured",
+      "set": "Colab dev",
+      "v3": {
+        "seconds": 34.84,
+        "outcome": "not_fixed",
+        "top_cause": "learning_rate_misconfigured",
+        "causes": [
+          "learning_rate_misconfigured",
+          "dead_relu"
+        ],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "learning_rate_misconfigured"
+      },
+      "v4": {
+        "seconds": 39.07,
+        "outcome": "not_fixed",
+        "top_cause": "dead_relu",
+        "causes": [
+          "dead_relu",
+          "vanishing_gradients",
+          "learning_rate_misconfigured"
+        ],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "learning_rate_misconfigured"
+      },
+      "v4active": {
+        "seconds": 36.03,
+        "outcome": "not_fixed",
+        "top_cause": "learning_rate_misconfigured",
+        "causes": [
+          "learning_rate_misconfigured",
+          "dead_relu"
+        ],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "learning_rate_misconfigured"
+      }
+    },
+    {
+      "name": "colab_17_housing_binary (frozen_layer_no_grad)",
+      "label": "frozen_layer_no_grad",
+      "set": "Colab dev",
+      "v3": {
+        "seconds": 25.69,
+        "outcome": "fixed",
+        "top_cause": "frozen_layer_no_grad",
+        "causes": [
+          "frozen_layer_no_grad"
+        ],
+        "patched": true,
+        "fixed_bug": "frozen_layer_no_grad",
+        "learned": "frozen_layer_no_grad"
+      },
+      "v4": {
+        "seconds": 23.51,
+        "outcome": "fixed",
+        "top_cause": "frozen_layer_no_grad",
+        "causes": [
+          "frozen_layer_no_grad"
+        ],
+        "patched": true,
+        "fixed_bug": "frozen_layer_no_grad",
+        "learned": "frozen_layer_no_grad"
+      },
+      "v4active": {
+        "seconds": 28.22,
+        "outcome": "fixed",
+        "top_cause": "frozen_layer_no_grad",
+        "causes": [
+          "frozen_layer_no_grad"
+        ],
+        "patched": true,
+        "fixed_bug": "frozen_layer_no_grad",
+        "learned": "frozen_layer_no_grad"
+      }
+    },
+    {
+      "name": "colab_17_housing_binary (dead_relu)",
+      "label": "dead_relu",
+      "set": "Colab dev",
+      "v3": {
+        "seconds": 24.16,
+        "outcome": "fixed",
+        "top_cause": "dead_relu",
+        "causes": [
+          "dead_relu",
+          "vanishing_gradients"
+        ],
+        "patched": true,
+        "fixed_bug": "dead_relu",
+        "learned": "dead_relu"
+      },
+      "v4": {
+        "seconds": 22.08,
+        "outcome": "fixed",
+        "top_cause": "dead_relu",
+        "causes": [
+          "dead_relu",
+          "vanishing_gradients"
+        ],
+        "patched": true,
+        "fixed_bug": "dead_relu",
+        "learned": "dead_relu"
+      },
+      "v4active": {
+        "seconds": 19.56,
+        "outcome": "fixed",
+        "top_cause": "dead_relu",
+        "causes": [
+          "dead_relu",
+          "vanishing_gradients",
+          "learning_rate_misconfigured"
+        ],
+        "patched": true,
+        "fixed_bug": "dead_relu",
+        "learned": "dead_relu"
+      }
+    },
+    {
+      "name": "colab_17_housing_binary (non_normalized_inputs)",
+      "label": "non_normalized_inputs",
+      "set": "Colab dev",
+      "v3": {
+        "seconds": 35.26,
+        "outcome": "not_fixed",
+        "top_cause": "learning_rate_misconfigured",
+        "causes": [
+          "learning_rate_misconfigured",
+          "exploding_gradients"
+        ],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "non_normalized_inputs"
+      },
+      "v4": {
+        "seconds": 32.84,
+        "outcome": "not_fixed",
+        "top_cause": "exploding_gradients",
+        "causes": [
+          "exploding_gradients"
+        ],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "non_normalized_inputs"
+      },
+      "v4active": {
+        "seconds": 32.96,
+        "outcome": "not_fixed",
+        "top_cause": "non_normalized_inputs",
+        "causes": [
+          "non_normalized_inputs",
+          "learning_rate_misconfigured",
+          "exploding_gradients",
+          "dead_relu"
+        ],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "non_normalized_inputs"
+      }
+    },
+    {
+      "name": "colab_17_housing_binary (label_data_misalignment)",
+      "label": "label_data_misalignment",
+      "set": "Colab dev",
+      "v3": {
+        "seconds": 23.5,
+        "outcome": "not_fixed",
+        "top_cause": "learning_rate_misconfigured",
+        "causes": [
+          "learning_rate_misconfigured"
+        ],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "label_data_misalignment"
+      },
+      "v4": {
+        "seconds": 22.1,
+        "outcome": "not_fixed",
+        "top_cause": "learning_rate_misconfigured",
+        "causes": [
+          "learning_rate_misconfigured"
+        ],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "label_data_misalignment"
+      },
+      "v4active": {
+        "seconds": 23.3,
+        "outcome": "not_fixed",
+        "top_cause": "learning_rate_misconfigured",
+        "causes": [
+          "learning_rate_misconfigured"
+        ],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "label_data_misalignment"
+      }
+    },
+    {
+      "name": "holdout_01_tabular_functions (clean)",
+      "label": "clean",
+      "set": "hand-written dev",
+      "v3": {
+        "seconds": 10.23,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "causes": [],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "clean"
+      },
+      "v4": {
+        "seconds": 8.78,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "causes": [],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "clean"
+      },
+      "v4active": {
+        "seconds": 8.94,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "causes": [],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "clean"
+      }
+    },
+    {
+      "name": "holdout_01_tabular_functions (clean) #2",
+      "label": "clean",
+      "set": "hand-written dev",
+      "v3": {
+        "seconds": 8.92,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "causes": [],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "clean"
+      },
+      "v4": {
+        "seconds": 8.83,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "causes": [],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "clean"
+      },
+      "v4active": {
+        "seconds": 10.21,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "causes": [],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "clean"
+      }
+    },
+    {
+      "name": "holdout_01_tabular_functions (missing_zero_grad)",
+      "label": "missing_zero_grad",
+      "set": "hand-written dev",
+      "v3": {
+        "seconds": 21.16,
+        "outcome": "not_fixed",
+        "top_cause": "missing_zero_grad",
+        "causes": [
+          "missing_zero_grad"
+        ],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "missing_zero_grad"
+      },
+      "v4": {
+        "seconds": 20.47,
+        "outcome": "not_fixed",
+        "top_cause": "missing_zero_grad",
+        "causes": [
+          "missing_zero_grad"
+        ],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "missing_zero_grad"
+      },
+      "v4active": {
+        "seconds": 20.96,
+        "outcome": "not_fixed",
+        "top_cause": "missing_zero_grad",
+        "causes": [
+          "missing_zero_grad"
+        ],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "missing_zero_grad"
+      }
+    },
+    {
+      "name": "holdout_01_tabular_functions (train_eval_mode_mismatch)",
+      "label": "train_eval_mode_mismatch",
+      "set": "hand-written dev",
+      "v3": {
+        "seconds": 8.31,
+        "outcome": "not_fixed",
+        "top_cause": "train_eval_mode_mismatch",
+        "causes": [
+          "train_eval_mode_mismatch"
+        ],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "train_eval_mode_mismatch"
+      },
+      "v4": {
+        "seconds": 9.94,
+        "outcome": "not_fixed",
+        "top_cause": "train_eval_mode_mismatch",
+        "causes": [
+          "train_eval_mode_mismatch"
+        ],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "train_eval_mode_mismatch"
+      },
+      "v4active": {
+        "seconds": 7.71,
+        "outcome": "not_fixed",
+        "top_cause": "train_eval_mode_mismatch",
+        "causes": [
+          "train_eval_mode_mismatch"
+        ],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "train_eval_mode_mismatch"
+      }
+    },
+    {
+      "name": "holdout_01_tabular_functions (softmax_before_cross_entropy)",
+      "label": "softmax_before_cross_entropy",
+      "set": "hand-written dev",
+      "v3": {
+        "seconds": 17.85,
+        "outcome": "fixed",
+        "top_cause": "softmax_before_cross_entropy",
+        "causes": [
+          "softmax_before_cross_entropy"
+        ],
+        "patched": true,
+        "fixed_bug": "softmax_before_cross_entropy",
+        "learned": "softmax_before_cross_entropy"
+      },
+      "v4": {
+        "seconds": 17.76,
+        "outcome": "fixed",
+        "top_cause": "softmax_before_cross_entropy",
+        "causes": [
+          "softmax_before_cross_entropy"
+        ],
+        "patched": true,
+        "fixed_bug": "softmax_before_cross_entropy",
+        "learned": "softmax_before_cross_entropy"
+      },
+      "v4active": {
+        "seconds": 18.61,
+        "outcome": "fixed",
+        "top_cause": "softmax_before_cross_entropy",
+        "causes": [
+          "softmax_before_cross_entropy"
+        ],
+        "patched": true,
+        "fixed_bug": "softmax_before_cross_entropy",
+        "learned": "softmax_before_cross_entropy"
+      }
+    },
+    {
+      "name": "holdout_01_tabular_functions (wrong_loss_reduction)",
+      "label": "wrong_loss_reduction",
+      "set": "hand-written dev",
+      "v3": {
+        "seconds": 22.3,
+        "outcome": "not_fixed",
+        "top_cause": "wrong_loss_reduction",
+        "causes": [
+          "wrong_loss_reduction"
+        ],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "wrong_loss_reduction"
+      },
+      "v4": {
+        "seconds": 22.14,
+        "outcome": "not_fixed",
+        "top_cause": "wrong_loss_reduction",
+        "causes": [
+          "wrong_loss_reduction"
+        ],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "wrong_loss_reduction"
+      },
+      "v4active": {
+        "seconds": 22.04,
+        "outcome": "not_fixed",
+        "top_cause": "wrong_loss_reduction",
+        "causes": [
+          "wrong_loss_reduction"
+        ],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "wrong_loss_reduction"
+      }
+    },
+    {
+      "name": "holdout_01_tabular_functions (learning_rate_misconfigured)",
+      "label": "learning_rate_misconfigured",
+      "set": "hand-written dev",
+      "v3": {
+        "seconds": 30.91,
+        "outcome": "fixed",
+        "top_cause": "vanishing_gradients",
+        "causes": [
+          "vanishing_gradients",
+          "learning_rate_misconfigured",
+          "exploding_gradients"
+        ],
+        "patched": true,
+        "fixed_bug": "vanishing_gradients",
+        "learned": "learning_rate_misconfigured"
+      },
+      "v4": {
+        "seconds": 32.55,
+        "outcome": "fixed",
+        "top_cause": "vanishing_gradients",
+        "causes": [
+          "vanishing_gradients",
+          "learning_rate_misconfigured",
+          "exploding_gradients"
+        ],
+        "patched": true,
+        "fixed_bug": "vanishing_gradients",
+        "learned": "learning_rate_misconfigured"
+      },
+      "v4active": {
+        "seconds": 32.54,
+        "outcome": "fixed",
+        "top_cause": "learning_rate_misconfigured",
+        "causes": [
+          "learning_rate_misconfigured",
+          "vanishing_gradients",
+          "exploding_gradients"
+        ],
+        "patched": true,
+        "fixed_bug": "vanishing_gradients",
+        "learned": "learning_rate_misconfigured"
+      }
+    },
+    {
+      "name": "holdout_01_tabular_functions (frozen_layer_no_grad)",
+      "label": "frozen_layer_no_grad",
+      "set": "hand-written dev",
+      "v3": {
+        "seconds": 12.65,
+        "outcome": "not_fixed",
+        "top_cause": "frozen_layer_no_grad",
+        "causes": [
+          "frozen_layer_no_grad"
+        ],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "frozen_layer_no_grad"
+      },
+      "v4": {
+        "seconds": 13.22,
+        "outcome": "not_fixed",
+        "top_cause": "frozen_layer_no_grad",
+        "causes": [
+          "frozen_layer_no_grad"
+        ],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "frozen_layer_no_grad"
+      },
+      "v4active": {
+        "seconds": 11.97,
+        "outcome": "not_fixed",
+        "top_cause": "frozen_layer_no_grad",
+        "causes": [
+          "frozen_layer_no_grad"
+        ],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "frozen_layer_no_grad"
+      }
+    },
+    {
+      "name": "holdout_01_tabular_functions (dead_relu)",
+      "label": "dead_relu",
+      "set": "hand-written dev",
+      "v3": {
+        "seconds": 19.13,
+        "outcome": "fixed",
+        "top_cause": "dead_relu",
+        "causes": [
+          "dead_relu",
+          "vanishing_gradients",
+          "frozen_layer_no_grad",
+          "learning_rate_misconfigured"
+        ],
+        "patched": true,
+        "fixed_bug": "dead_relu",
+        "learned": "dead_relu"
+      },
+      "v4": {
+        "seconds": 17.93,
+        "outcome": "fixed",
+        "top_cause": "dead_relu",
+        "causes": [
+          "dead_relu",
+          "vanishing_gradients",
+          "frozen_layer_no_grad",
+          "learning_rate_misconfigured"
+        ],
+        "patched": true,
+        "fixed_bug": "dead_relu",
+        "learned": "dead_relu"
+      },
+      "v4active": {
+        "seconds": 20.15,
+        "outcome": "fixed",
+        "top_cause": "dead_relu",
+        "causes": [
+          "dead_relu",
+          "vanishing_gradients",
+          "frozen_layer_no_grad",
+          "learning_rate_misconfigured"
+        ],
+        "patched": true,
+        "fixed_bug": "dead_relu",
+        "learned": "dead_relu"
+      }
+    },
+    {
+      "name": "holdout_01_tabular_functions (non_normalized_inputs)",
+      "label": "non_normalized_inputs",
+      "set": "hand-written dev",
+      "v3": {
+        "seconds": 11.18,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "causes": [],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "non_normalized_inputs"
+      },
+      "v4": {
+        "seconds": 10.09,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "causes": [],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "non_normalized_inputs"
+      },
+      "v4active": {
+        "seconds": 23.25,
+        "outcome": "not_fixed",
+        "top_cause": "non_normalized_inputs",
+        "causes": [
+          "non_normalized_inputs"
+        ],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "non_normalized_inputs"
+      }
+    },
+    {
+      "name": "holdout_01_tabular_functions (label_data_misalignment)",
+      "label": "label_data_misalignment",
+      "set": "hand-written dev",
+      "v3": {
+        "seconds": 9.53,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "causes": [],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "label_data_misalignment"
+      },
+      "v4": {
+        "seconds": 7.33,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "causes": [],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "label_data_misalignment"
+      },
+      "v4active": {
+        "seconds": 6.71,
+        "outcome": "not_fixed",
+        "top_cause": "label_data_misalignment",
+        "causes": [
+          "label_data_misalignment"
+        ],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "label_data_misalignment"
+      }
+    },
+    {
+      "name": "holdout_02_cnn_scheduler (clean)",
+      "label": "clean",
+      "set": "hand-written dev",
+      "v3": {
+        "seconds": 7.64,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "causes": [],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "clean"
+      },
+      "v4": {
+        "seconds": 6.92,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "causes": [],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "clean"
+      },
+      "v4active": {
+        "seconds": 6.88,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "causes": [],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "clean"
+      }
+    },
+    {
+      "name": "holdout_02_cnn_scheduler (clean) #2",
+      "label": "clean",
+      "set": "hand-written dev",
+      "v3": {
+        "seconds": 7.96,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "causes": [],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "clean"
+      },
+      "v4": {
+        "seconds": 7.14,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "causes": [],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "clean"
+      },
+      "v4active": {
+        "seconds": 7.15,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "causes": [],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "clean"
+      }
+    },
+    {
+      "name": "holdout_02_cnn_scheduler (missing_zero_grad)",
+      "label": "missing_zero_grad",
+      "set": "hand-written dev",
+      "v3": {
+        "seconds": 14.73,
+        "outcome": "fixed",
+        "top_cause": "missing_zero_grad",
+        "causes": [
+          "missing_zero_grad",
+          "learning_rate_misconfigured",
+          "exploding_gradients"
+        ],
+        "patched": true,
+        "fixed_bug": "missing_zero_grad",
+        "learned": "missing_zero_grad"
+      },
+      "v4": {
+        "seconds": 18.01,
+        "outcome": "fixed",
+        "top_cause": "missing_zero_grad",
+        "causes": [
+          "missing_zero_grad",
+          "learning_rate_misconfigured",
+          "exploding_gradients"
+        ],
+        "patched": true,
+        "fixed_bug": "missing_zero_grad",
+        "learned": "missing_zero_grad"
+      },
+      "v4active": {
+        "seconds": 18.09,
+        "outcome": "fixed",
+        "top_cause": "missing_zero_grad",
+        "causes": [
+          "missing_zero_grad",
+          "learning_rate_misconfigured",
+          "exploding_gradients"
+        ],
+        "patched": true,
+        "fixed_bug": "missing_zero_grad",
+        "learned": "missing_zero_grad"
+      }
+    },
+    {
+      "name": "holdout_02_cnn_scheduler (softmax_before_cross_entropy)",
+      "label": "softmax_before_cross_entropy",
+      "set": "hand-written dev",
+      "v3": {
+        "seconds": 18.15,
+        "outcome": "fixed",
+        "top_cause": "softmax_before_cross_entropy",
+        "causes": [
+          "softmax_before_cross_entropy"
+        ],
+        "patched": true,
+        "fixed_bug": "softmax_before_cross_entropy",
+        "learned": "softmax_before_cross_entropy"
+      },
+      "v4": {
+        "seconds": 18.05,
+        "outcome": "fixed",
+        "top_cause": "softmax_before_cross_entropy",
+        "causes": [
+          "softmax_before_cross_entropy"
+        ],
+        "patched": true,
+        "fixed_bug": "softmax_before_cross_entropy",
+        "learned": "softmax_before_cross_entropy"
+      },
+      "v4active": {
+        "seconds": 18.41,
+        "outcome": "fixed",
+        "top_cause": "softmax_before_cross_entropy",
+        "causes": [
+          "softmax_before_cross_entropy"
+        ],
+        "patched": true,
+        "fixed_bug": "softmax_before_cross_entropy",
+        "learned": "softmax_before_cross_entropy"
+      }
+    },
+    {
+      "name": "holdout_02_cnn_scheduler (wrong_loss_reduction)",
+      "label": "wrong_loss_reduction",
+      "set": "hand-written dev",
+      "v3": {
+        "seconds": 18.05,
+        "outcome": "fixed",
+        "top_cause": "wrong_loss_reduction",
+        "causes": [
+          "wrong_loss_reduction",
+          "learning_rate_misconfigured",
+          "exploding_gradients",
+          "vanishing_gradients"
+        ],
+        "patched": true,
+        "fixed_bug": "wrong_loss_reduction",
+        "learned": "wrong_loss_reduction"
+      },
+      "v4": {
+        "seconds": 18.14,
+        "outcome": "fixed",
+        "top_cause": "wrong_loss_reduction",
+        "causes": [
+          "wrong_loss_reduction",
+          "learning_rate_misconfigured",
+          "exploding_gradients",
+          "vanishing_gradients"
+        ],
+        "patched": true,
+        "fixed_bug": "wrong_loss_reduction",
+        "learned": "wrong_loss_reduction"
+      },
+      "v4active": {
+        "seconds": 18.33,
+        "outcome": "fixed",
+        "top_cause": "wrong_loss_reduction",
+        "causes": [
+          "wrong_loss_reduction",
+          "learning_rate_misconfigured",
+          "exploding_gradients",
+          "vanishing_gradients"
+        ],
+        "patched": true,
+        "fixed_bug": "wrong_loss_reduction",
+        "learned": "wrong_loss_reduction"
+      }
+    },
+    {
+      "name": "holdout_02_cnn_scheduler (learning_rate_misconfigured)",
+      "label": "learning_rate_misconfigured",
+      "set": "hand-written dev",
+      "v3": {
+        "seconds": 22.33,
+        "outcome": "fixed",
+        "top_cause": "learning_rate_misconfigured",
+        "causes": [
+          "learning_rate_misconfigured",
+          "exploding_gradients",
+          "vanishing_gradients"
+        ],
+        "patched": true,
+        "fixed_bug": "learning_rate_misconfigured",
+        "learned": "learning_rate_misconfigured"
+      },
+      "v4": {
+        "seconds": 20.14,
+        "outcome": "fixed",
+        "top_cause": "learning_rate_misconfigured",
+        "causes": [
+          "learning_rate_misconfigured",
+          "exploding_gradients",
+          "vanishing_gradients"
+        ],
+        "patched": true,
+        "fixed_bug": "learning_rate_misconfigured",
+        "learned": "learning_rate_misconfigured"
+      },
+      "v4active": {
+        "seconds": 20.66,
+        "outcome": "fixed",
+        "top_cause": "learning_rate_misconfigured",
+        "causes": [
+          "learning_rate_misconfigured",
+          "exploding_gradients",
+          "vanishing_gradients"
+        ],
+        "patched": true,
+        "fixed_bug": "learning_rate_misconfigured",
+        "learned": "learning_rate_misconfigured"
+      }
+    },
+    {
+      "name": "holdout_02_cnn_scheduler (frozen_layer_no_grad)",
+      "label": "frozen_layer_no_grad",
+      "set": "hand-written dev",
+      "v3": {
+        "seconds": 21.11,
+        "outcome": "fixed",
+        "top_cause": "frozen_layer_no_grad",
+        "causes": [
+          "frozen_layer_no_grad"
+        ],
+        "patched": true,
+        "fixed_bug": "frozen_layer_no_grad",
+        "learned": "frozen_layer_no_grad"
+      },
+      "v4": {
+        "seconds": 21.17,
+        "outcome": "fixed",
+        "top_cause": "frozen_layer_no_grad",
+        "causes": [
+          "frozen_layer_no_grad"
+        ],
+        "patched": true,
+        "fixed_bug": "frozen_layer_no_grad",
+        "learned": "frozen_layer_no_grad"
+      },
+      "v4active": {
+        "seconds": 21.35,
+        "outcome": "fixed",
+        "top_cause": "frozen_layer_no_grad",
+        "causes": [
+          "frozen_layer_no_grad"
+        ],
+        "patched": true,
+        "fixed_bug": "frozen_layer_no_grad",
+        "learned": "frozen_layer_no_grad"
+      }
+    },
+    {
+      "name": "holdout_02_cnn_scheduler (dead_relu)",
+      "label": "dead_relu",
+      "set": "hand-written dev",
+      "v3": {
+        "seconds": 12.76,
+        "outcome": "not_fixed",
+        "top_cause": "frozen_layer_no_grad",
+        "causes": [
+          "frozen_layer_no_grad",
+          "learning_rate_misconfigured",
+          "vanishing_gradients"
+        ],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "dead_relu"
+      },
+      "v4": {
+        "seconds": 11.65,
+        "outcome": "not_fixed",
+        "top_cause": "frozen_layer_no_grad",
+        "causes": [
+          "frozen_layer_no_grad",
+          "learning_rate_misconfigured",
+          "vanishing_gradients"
+        ],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "dead_relu"
+      },
+      "v4active": {
+        "seconds": 18.0,
+        "outcome": "fixed",
+        "top_cause": "dead_relu",
+        "causes": [
+          "dead_relu",
+          "vanishing_gradients",
+          "frozen_layer_no_grad",
+          "learning_rate_misconfigured"
+        ],
+        "patched": true,
+        "fixed_bug": "dead_relu",
+        "learned": "dead_relu"
+      }
+    },
+    {
+      "name": "holdout_02_cnn_scheduler (non_normalized_inputs)",
+      "label": "non_normalized_inputs",
+      "set": "hand-written dev",
+      "v3": {
+        "seconds": 30.14,
+        "outcome": "not_fixed",
+        "top_cause": "learning_rate_misconfigured",
+        "causes": [
+          "learning_rate_misconfigured",
+          "exploding_gradients",
+          "vanishing_gradients"
+        ],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "non_normalized_inputs"
+      },
+      "v4": {
+        "seconds": 27.65,
+        "outcome": "not_fixed",
+        "top_cause": "learning_rate_misconfigured",
+        "causes": [
+          "learning_rate_misconfigured",
+          "exploding_gradients",
+          "vanishing_gradients"
+        ],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "non_normalized_inputs"
+      },
+      "v4active": {
+        "seconds": 30.31,
+        "outcome": "not_fixed",
+        "top_cause": "non_normalized_inputs",
+        "causes": [
+          "non_normalized_inputs",
+          "learning_rate_misconfigured",
+          "exploding_gradients",
+          "vanishing_gradients"
+        ],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "non_normalized_inputs"
+      }
+    },
+    {
+      "name": "holdout_02_cnn_scheduler (label_data_misalignment)",
+      "label": "label_data_misalignment",
+      "set": "hand-written dev",
+      "v3": {
+        "seconds": 21.62,
+        "outcome": "not_fixed",
+        "top_cause": "learning_rate_misconfigured",
+        "causes": [
+          "learning_rate_misconfigured"
+        ],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "label_data_misalignment"
+      },
+      "v4": {
+        "seconds": 19.94,
+        "outcome": "not_fixed",
+        "top_cause": "learning_rate_misconfigured",
+        "causes": [
+          "learning_rate_misconfigured"
+        ],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "label_data_misalignment"
+      },
+      "v4active": {
+        "seconds": 19.27,
+        "outcome": "not_fixed",
+        "top_cause": "label_data_misalignment",
+        "causes": [
+          "label_data_misalignment",
+          "learning_rate_misconfigured"
+        ],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "label_data_misalignment"
+      }
+    },
+    {
+      "name": "holdout_03_residual_regression (clean)",
+      "label": "clean",
+      "set": "hand-written dev",
+      "v3": {
+        "seconds": 9.0,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "causes": [],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "label_data_misalignment"
+      },
+      "v4": {
+        "seconds": 7.64,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "causes": [],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "clean"
+      },
+      "v4active": {
+        "seconds": 9.6,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "causes": [],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "clean"
+      }
+    },
+    {
+      "name": "holdout_03_residual_regression (clean) #2",
+      "label": "clean",
+      "set": "hand-written dev",
+      "v3": {
+        "seconds": 8.32,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "causes": [],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "label_data_misalignment"
+      },
+      "v4": {
+        "seconds": 7.41,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "causes": [],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "clean"
+      },
+      "v4active": {
+        "seconds": 8.66,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "causes": [],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "clean"
+      }
+    },
+    {
+      "name": "holdout_03_residual_regression (missing_zero_grad)",
+      "label": "missing_zero_grad",
+      "set": "hand-written dev",
+      "v3": {
+        "seconds": 21.93,
+        "outcome": "fixed",
+        "top_cause": "missing_zero_grad",
+        "causes": [
+          "missing_zero_grad"
+        ],
+        "patched": true,
+        "fixed_bug": "missing_zero_grad",
+        "learned": "missing_zero_grad"
+      },
+      "v4": {
+        "seconds": 22.76,
+        "outcome": "fixed",
+        "top_cause": "missing_zero_grad",
+        "causes": [
+          "missing_zero_grad"
+        ],
+        "patched": true,
+        "fixed_bug": "missing_zero_grad",
+        "learned": "missing_zero_grad"
+      },
+      "v4active": {
+        "seconds": 28.57,
+        "outcome": "fixed",
+        "top_cause": "missing_zero_grad",
+        "causes": [
+          "missing_zero_grad"
+        ],
+        "patched": true,
+        "fixed_bug": "missing_zero_grad",
+        "learned": "missing_zero_grad"
+      }
+    },
+    {
+      "name": "holdout_03_residual_regression (wrong_loss_reduction)",
+      "label": "wrong_loss_reduction",
+      "set": "hand-written dev",
+      "v3": {
+        "seconds": 21.82,
+        "outcome": "not_fixed",
+        "top_cause": "wrong_loss_reduction",
+        "causes": [
+          "wrong_loss_reduction"
+        ],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "wrong_loss_reduction"
+      },
+      "v4": {
+        "seconds": 22.57,
+        "outcome": "not_fixed",
+        "top_cause": "wrong_loss_reduction",
+        "causes": [
+          "wrong_loss_reduction"
+        ],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "wrong_loss_reduction"
+      },
+      "v4active": {
+        "seconds": 27.98,
+        "outcome": "not_fixed",
+        "top_cause": "wrong_loss_reduction",
+        "causes": [
+          "wrong_loss_reduction"
+        ],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "wrong_loss_reduction"
+      }
+    },
+    {
+      "name": "holdout_03_residual_regression (learning_rate_misconfigured)",
+      "label": "learning_rate_misconfigured",
+      "set": "hand-written dev",
+      "v3": {
+        "seconds": 30.04,
+        "outcome": "not_fixed",
+        "top_cause": "learning_rate_misconfigured",
+        "causes": [
+          "learning_rate_misconfigured",
+          "exploding_gradients",
+          "dead_relu"
+        ],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "learning_rate_misconfigured"
+      },
+      "v4": {
+        "seconds": 40.97,
+        "outcome": "not_fixed",
+        "top_cause": "learning_rate_misconfigured",
+        "causes": [
+          "learning_rate_misconfigured",
+          "exploding_gradients",
+          "dead_relu"
+        ],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "learning_rate_misconfigured"
+      },
+      "v4active": {
+        "seconds": 42.3,
+        "outcome": "not_fixed",
+        "top_cause": "learning_rate_misconfigured",
+        "causes": [
+          "learning_rate_misconfigured",
+          "exploding_gradients",
+          "dead_relu"
+        ],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "learning_rate_misconfigured"
+      }
+    },
+    {
+      "name": "holdout_03_residual_regression (frozen_layer_no_grad)",
+      "label": "frozen_layer_no_grad",
+      "set": "hand-written dev",
+      "v3": {
+        "seconds": 22.51,
+        "outcome": "fixed",
+        "top_cause": "frozen_layer_no_grad",
+        "causes": [
+          "frozen_layer_no_grad"
+        ],
+        "patched": true,
+        "fixed_bug": "frozen_layer_no_grad",
+        "learned": "frozen_layer_no_grad"
+      },
+      "v4": {
+        "seconds": 23.87,
+        "outcome": "fixed",
+        "top_cause": "frozen_layer_no_grad",
+        "causes": [
+          "frozen_layer_no_grad"
+        ],
+        "patched": true,
+        "fixed_bug": "frozen_layer_no_grad",
+        "learned": "frozen_layer_no_grad"
+      },
+      "v4active": {
+        "seconds": 23.7,
+        "outcome": "fixed",
+        "top_cause": "frozen_layer_no_grad",
+        "causes": [
+          "frozen_layer_no_grad"
+        ],
+        "patched": true,
+        "fixed_bug": "frozen_layer_no_grad",
+        "learned": "frozen_layer_no_grad"
+      }
+    },
+    {
+      "name": "holdout_03_residual_regression (non_normalized_inputs)",
+      "label": "non_normalized_inputs",
+      "set": "hand-written dev",
+      "v3": {
+        "seconds": 27.58,
+        "outcome": "fixed",
+        "top_cause": "exploding_gradients",
+        "causes": [
+          "exploding_gradients"
+        ],
+        "patched": true,
+        "fixed_bug": "exploding_gradients",
+        "learned": "non_normalized_inputs"
+      },
+      "v4": {
+        "seconds": 30.25,
+        "outcome": "fixed",
+        "top_cause": "exploding_gradients",
+        "causes": [
+          "exploding_gradients"
+        ],
+        "patched": true,
+        "fixed_bug": "exploding_gradients",
+        "learned": "non_normalized_inputs"
+      },
+      "v4active": {
+        "seconds": 29.12,
+        "outcome": "fixed",
+        "top_cause": "non_normalized_inputs",
+        "causes": [
+          "non_normalized_inputs",
+          "exploding_gradients"
+        ],
+        "patched": true,
+        "fixed_bug": "exploding_gradients",
+        "learned": "non_normalized_inputs"
+      }
+    },
+    {
+      "name": "holdout_03_residual_regression (label_data_misalignment)",
+      "label": "label_data_misalignment",
+      "set": "hand-written dev",
+      "v3": {
+        "seconds": 29.11,
+        "outcome": "not_fixed",
+        "top_cause": "learning_rate_misconfigured",
+        "causes": [
+          "learning_rate_misconfigured"
+        ],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "label_data_misalignment"
+      },
+      "v4": {
+        "seconds": 24.35,
+        "outcome": "not_fixed",
+        "top_cause": "learning_rate_misconfigured",
+        "causes": [
+          "learning_rate_misconfigured"
+        ],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "clean"
+      },
+      "v4active": {
+        "seconds": 30.27,
+        "outcome": "not_fixed",
+        "top_cause": "learning_rate_misconfigured",
+        "causes": [
+          "learning_rate_misconfigured"
+        ],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "clean"
+      }
+    },
+    {
+      "name": "holdout_04_text_bag (clean)",
+      "label": "clean",
+      "set": "hand-written dev",
+      "v3": {
+        "seconds": 13.47,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "causes": [],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "train_eval_mode_mismatch"
+      },
+      "v4": {
+        "seconds": 9.96,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "causes": [],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "clean"
+      },
+      "v4active": {
+        "seconds": 10.74,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "causes": [],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "clean"
+      }
+    },
+    {
+      "name": "holdout_04_text_bag (clean) #2",
+      "label": "clean",
+      "set": "hand-written dev",
+      "v3": {
+        "seconds": 9.41,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "causes": [],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "clean"
+      },
+      "v4": {
+        "seconds": 11.33,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "causes": [],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "clean"
+      },
+      "v4active": {
+        "seconds": 11.28,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "causes": [],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "clean"
+      }
+    },
+    {
+      "name": "holdout_04_text_bag (missing_zero_grad)",
+      "label": "missing_zero_grad",
+      "set": "hand-written dev",
+      "v3": {
+        "seconds": 27.16,
+        "outcome": "not_fixed",
+        "top_cause": "missing_zero_grad",
+        "causes": [
+          "missing_zero_grad"
+        ],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "missing_zero_grad"
+      },
+      "v4": {
+        "seconds": 32.38,
+        "outcome": "not_fixed",
+        "top_cause": "missing_zero_grad",
+        "causes": [
+          "missing_zero_grad"
+        ],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "missing_zero_grad"
+      },
+      "v4active": {
+        "seconds": 29.6,
+        "outcome": "not_fixed",
+        "top_cause": "missing_zero_grad",
+        "causes": [
+          "missing_zero_grad"
+        ],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "missing_zero_grad"
+      }
+    },
+    {
+      "name": "holdout_04_text_bag (train_eval_mode_mismatch)",
+      "label": "train_eval_mode_mismatch",
+      "set": "hand-written dev",
+      "v3": {
+        "seconds": 31.29,
+        "outcome": "fixed",
+        "top_cause": "train_eval_mode_mismatch",
+        "causes": [
+          "train_eval_mode_mismatch"
+        ],
+        "patched": true,
+        "fixed_bug": "train_eval_mode_mismatch",
+        "learned": "train_eval_mode_mismatch"
+      },
+      "v4": {
+        "seconds": 32.45,
+        "outcome": "fixed",
+        "top_cause": "train_eval_mode_mismatch",
+        "causes": [
+          "train_eval_mode_mismatch"
+        ],
+        "patched": true,
+        "fixed_bug": "train_eval_mode_mismatch",
+        "learned": "train_eval_mode_mismatch"
+      },
+      "v4active": {
+        "seconds": 28.48,
+        "outcome": "fixed",
+        "top_cause": "train_eval_mode_mismatch",
+        "causes": [
+          "train_eval_mode_mismatch"
+        ],
+        "patched": true,
+        "fixed_bug": "train_eval_mode_mismatch",
+        "learned": "train_eval_mode_mismatch"
+      }
+    },
+    {
+      "name": "holdout_04_text_bag (softmax_before_cross_entropy)",
+      "label": "softmax_before_cross_entropy",
+      "set": "hand-written dev",
+      "v3": {
+        "seconds": 27.02,
+        "outcome": "fixed",
+        "top_cause": "softmax_before_cross_entropy",
+        "causes": [
+          "softmax_before_cross_entropy"
+        ],
+        "patched": true,
+        "fixed_bug": "softmax_before_cross_entropy",
+        "learned": "softmax_before_cross_entropy"
+      },
+      "v4": {
+        "seconds": 26.13,
+        "outcome": "fixed",
+        "top_cause": "softmax_before_cross_entropy",
+        "causes": [
+          "softmax_before_cross_entropy"
+        ],
+        "patched": true,
+        "fixed_bug": "softmax_before_cross_entropy",
+        "learned": "softmax_before_cross_entropy"
+      },
+      "v4active": {
+        "seconds": 21.93,
+        "outcome": "fixed",
+        "top_cause": "softmax_before_cross_entropy",
+        "causes": [
+          "softmax_before_cross_entropy"
+        ],
+        "patched": true,
+        "fixed_bug": "softmax_before_cross_entropy",
+        "learned": "softmax_before_cross_entropy"
+      }
+    },
+    {
+      "name": "holdout_04_text_bag (wrong_loss_reduction)",
+      "label": "wrong_loss_reduction",
+      "set": "hand-written dev",
+      "v3": {
+        "seconds": 10.94,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "causes": [],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "wrong_loss_reduction"
+      },
+      "v4": {
+        "seconds": 11.61,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "causes": [],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "wrong_loss_reduction"
+      },
+      "v4active": {
+        "seconds": 28.52,
+        "outcome": "fixed",
+        "top_cause": "wrong_loss_reduction",
+        "causes": [
+          "wrong_loss_reduction"
+        ],
+        "patched": true,
+        "fixed_bug": "wrong_loss_reduction",
+        "learned": "wrong_loss_reduction"
+      }
+    },
+    {
+      "name": "holdout_04_text_bag (learning_rate_misconfigured)",
+      "label": "learning_rate_misconfigured",
+      "set": "hand-written dev",
+      "v3": {
+        "seconds": 28.58,
+        "outcome": "fixed",
+        "top_cause": "learning_rate_misconfigured",
+        "causes": [
+          "learning_rate_misconfigured",
+          "dead_relu",
+          "vanishing_gradients",
+          "exploding_gradients"
+        ],
+        "patched": true,
+        "fixed_bug": "learning_rate_misconfigured",
+        "learned": "learning_rate_misconfigured"
+      },
+      "v4": {
+        "seconds": 25.59,
+        "outcome": "fixed",
+        "top_cause": "learning_rate_misconfigured",
+        "causes": [
+          "learning_rate_misconfigured",
+          "dead_relu",
+          "vanishing_gradients",
+          "exploding_gradients"
+        ],
+        "patched": true,
+        "fixed_bug": "learning_rate_misconfigured",
+        "learned": "learning_rate_misconfigured"
+      },
+      "v4active": {
+        "seconds": 18.14,
+        "outcome": "fixed",
+        "top_cause": "learning_rate_misconfigured",
+        "causes": [
+          "learning_rate_misconfigured",
+          "dead_relu",
+          "vanishing_gradients",
+          "exploding_gradients"
+        ],
+        "patched": true,
+        "fixed_bug": "learning_rate_misconfigured",
+        "learned": "learning_rate_misconfigured"
+      }
+    },
+    {
+      "name": "holdout_04_text_bag (frozen_layer_no_grad)",
+      "label": "frozen_layer_no_grad",
+      "set": "hand-written dev",
+      "v3": {
+        "seconds": 24.78,
+        "outcome": "fixed",
+        "top_cause": "frozen_layer_no_grad",
+        "causes": [
+          "frozen_layer_no_grad"
+        ],
+        "patched": true,
+        "fixed_bug": "frozen_layer_no_grad",
+        "learned": "frozen_layer_no_grad"
+      },
+      "v4": {
+        "seconds": 23.15,
+        "outcome": "fixed",
+        "top_cause": "frozen_layer_no_grad",
+        "causes": [
+          "frozen_layer_no_grad"
+        ],
+        "patched": true,
+        "fixed_bug": "frozen_layer_no_grad",
+        "learned": "frozen_layer_no_grad"
+      },
+      "v4active": {
+        "seconds": 15.97,
+        "outcome": "fixed",
+        "top_cause": "frozen_layer_no_grad",
+        "causes": [
+          "frozen_layer_no_grad"
+        ],
+        "patched": true,
+        "fixed_bug": "frozen_layer_no_grad",
+        "learned": "frozen_layer_no_grad"
+      }
+    },
+    {
+      "name": "holdout_04_text_bag (dead_relu)",
+      "label": "dead_relu",
+      "set": "hand-written dev",
+      "v3": {
+        "seconds": 22.45,
+        "outcome": "fixed",
+        "top_cause": "dead_relu",
+        "causes": [
+          "dead_relu",
+          "vanishing_gradients",
+          "frozen_layer_no_grad",
+          "learning_rate_misconfigured"
+        ],
+        "patched": true,
+        "fixed_bug": "dead_relu",
+        "learned": "dead_relu"
+      },
+      "v4": {
+        "seconds": 16.1,
+        "outcome": "fixed",
+        "top_cause": "dead_relu",
+        "causes": [
+          "dead_relu",
+          "vanishing_gradients",
+          "frozen_layer_no_grad",
+          "learning_rate_misconfigured"
+        ],
+        "patched": true,
+        "fixed_bug": "dead_relu",
+        "learned": "dead_relu"
+      },
+      "v4active": {
+        "seconds": 11.37,
+        "outcome": "fixed",
+        "top_cause": "dead_relu",
+        "causes": [
+          "dead_relu",
+          "vanishing_gradients",
+          "frozen_layer_no_grad",
+          "learning_rate_misconfigured"
+        ],
+        "patched": true,
+        "fixed_bug": "dead_relu",
+        "learned": "dead_relu"
+      }
+    },
+    {
+      "name": "holdout_04_text_bag (label_data_misalignment)",
+      "label": "label_data_misalignment",
+      "set": "hand-written dev",
+      "v3": {
+        "seconds": 6.2,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "causes": [],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "label_data_misalignment"
+      },
+      "v4": {
+        "seconds": 6.22,
+        "outcome": "no_bug_found",
+        "top_cause": null,
+        "causes": [],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "label_data_misalignment"
+      },
+      "v4active": {
+        "seconds": 4.54,
+        "outcome": "not_fixed",
+        "top_cause": "label_data_misalignment",
+        "causes": [
+          "label_data_misalignment"
+        ],
+        "patched": false,
+        "fixed_bug": null,
+        "learned": "label_data_misalignment"
+      }
+    }
+  ],
+  "summary": {
+    "Colab dev": {
+      "v3": {
+        "buggy": 23,
+        "healthy": 12,
+        "repaired": 10,
+        "right_cause_first": 11,
+        "right_cause_in_top3": 13,
+        "named_correctly": 20,
+        "planted_bug_fixed": 7,
+        "healthy_changed": 0,
+        "errors": 0,
+        "total_seconds": 544.0,
+        "median_seconds": 11.51,
+        "median_seconds_buggy": 17.87
+      },
+      "v4": {
+        "buggy": 23,
+        "healthy": 12,
+        "repaired": 10,
+        "right_cause_first": 11,
+        "right_cause_in_top3": 13,
+        "named_correctly": 20,
+        "planted_bug_fixed": 8,
+        "healthy_changed": 0,
+        "errors": 0,
+        "total_seconds": 551.6,
+        "median_seconds": 11.39,
+        "median_seconds_buggy": 18.91
+      },
+      "v4active": {
+        "buggy": 23,
+        "healthy": 12,
+        "repaired": 11,
+        "right_cause_first": 17,
+        "right_cause_in_top3": 17,
+        "named_correctly": 26,
+        "planted_bug_fixed": 9,
+        "healthy_changed": 0,
+        "errors": 0,
+        "total_seconds": 560.5,
+        "median_seconds": 10.12,
+        "median_seconds_buggy": 19.56
+      }
+    },
+    "hand-written dev": {
+      "v3": {
+        "buggy": 31,
+        "healthy": 8,
+        "repaired": 16,
+        "right_cause_first": 21,
+        "right_cause_in_top3": 22,
+        "named_correctly": 29,
+        "planted_bug_fixed": 14,
+        "healthy_changed": 0,
+        "errors": 0,
+        "total_seconds": 718.3,
+        "median_seconds": 19.13,
+        "median_seconds_buggy": 21.82
+      },
+      "v4": {
+        "buggy": 31,
+        "healthy": 8,
+        "repaired": 16,
+        "right_cause_first": 21,
+        "right_cause_in_top3": 22,
+        "named_correctly": 29,
+        "planted_bug_fixed": 14,
+        "healthy_changed": 0,
+        "errors": 0,
+        "total_seconds": 712.6,
+        "median_seconds": 18.05,
+        "median_seconds_buggy": 20.47
+      },
+      "v4active": {
+        "buggy": 31,
+        "healthy": 8,
+        "repaired": 18,
+        "right_cause_first": 30,
+        "right_cause_in_top3": 30,
+        "named_correctly": 38,
+        "planted_bug_fixed": 16,
+        "healthy_changed": 0,
+        "errors": 0,
+        "total_seconds": 742.3,
+        "median_seconds": 18.61,
+        "median_seconds_buggy": 20.96
+      }
+    },
+    "all": {
+      "v3": {
+        "buggy": 54,
+        "healthy": 20,
+        "repaired": 26,
+        "right_cause_first": 32,
+        "right_cause_in_top3": 35,
+        "named_correctly": 49,
+        "planted_bug_fixed": 21,
+        "healthy_changed": 0,
+        "errors": 0,
+        "total_seconds": 1262.3,
+        "median_seconds": 16.29,
+        "median_seconds_buggy": 21.62
+      },
+      "v4": {
+        "buggy": 54,
+        "healthy": 20,
+        "repaired": 26,
+        "right_cause_first": 32,
+        "right_cause_in_top3": 35,
+        "named_correctly": 49,
+        "planted_bug_fixed": 22,
+        "healthy_changed": 0,
+        "errors": 0,
+        "total_seconds": 1264.2,
+        "median_seconds": 16.1,
+        "median_seconds_buggy": 20.47
+      },
+      "v4active": {
+        "buggy": 54,
+        "healthy": 20,
+        "repaired": 29,
+        "right_cause_first": 47,
+        "right_cause_in_top3": 47,
+        "named_correctly": 64,
+        "planted_bug_fixed": 25,
+        "healthy_changed": 0,
+        "errors": 0,
+        "total_seconds": 1302.8,
+        "median_seconds": 18.09,
+        "median_seconds_buggy": 20.96
+      }
+    }
+  }
+}

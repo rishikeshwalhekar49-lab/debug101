@@ -3,17 +3,19 @@
 During perception the script is run once more, traced, at the same time as the
 runtime monitor (so it costs little extra time). What happens next depends on the mode:
 
-* "advisory" (the default): the guess is shown in the report, and nothing else.
-* "active": the probabilities also take part. A confident guess (p >= FINDING_THRESHOLD)
-  of a bug no detector reported becomes a runtime finding, the probabilities nudge the
-  offline ranking of the hypotheses (by at most WEIGHT), and an LLM is given them as
-  one more piece of evidence.
+* "active" (the default since version 4): the probabilities take part. A confident guess
+  (p >= FINDING_THRESHOLD) of a bug no detector reported becomes a runtime finding, the
+  probabilities nudge the offline ranking of the hypotheses (by at most WEIGHT), and an
+  LLM is given them as one more piece of evidence.
+* "advisory": the guess is shown in the report, and nothing else.
 * "off": no traced run at all.
 
-Advisory is the default because "active" was measured and made results worse: on the
-blind benchmarks it repaired 8 of 18 instead of 9 and ranked the right cause first for
-13 instead of 14 (docs/learned_classifier.md). Every patch still has to pass both
-validation gates, whatever the classifier said.
+With version 1 of the classifier, "active" made results worse (8 of 18 benchmarks
+repaired instead of 9), so advisory was the default. Version 4 was measured again, on the
+tuning scripts only (examples/holdout 01 to 04 and the Colab dev scripts, 54 buggy and
+20 healthy): right cause first 47 instead of 32, planted bug fixed 25 instead of 22, and
+no healthy script changed in either mode. So "active" is now the default. Every patch
+still has to pass both validation gates, whatever the classifier said.
 """
 
 from __future__ import annotations
@@ -24,14 +26,18 @@ from typing import Any, Dict, List, Optional, Sequence
 
 from ..findings import Finding, Severity
 
-FINDING_THRESHOLD = 0.9  # held-out templates: 3.8% of healthy runs reach it wrongly, 83% of bugs are caught
+FINDING_THRESHOLD = 0.9
 WEIGHT = 0.3
+UNSURE_BELOW = 0.5  # a top guess below this (calibrated) probability is shown as "unsure"
 CLEAN = "clean"
 MODES = ("off", "advisory", "active")
 
 
+TRACE_STEPS = 150  # as long as the monitor's run, which it runs beside, so it costs no extra time
+
+
 def predict_script(path: Path, *, script_args: Sequence[str] = (), timeout: float = 120.0,
-                   max_steps: int = 60) -> Optional[Dict[str, Any]]:
+                   max_steps: int = TRACE_STEPS) -> Optional[Dict[str, Any]]:
     """Trace the script once and classify the trace; None when there is no classifier or the run failed."""
     from ..mutation.dataset import trace_run, usable
     from .model import load_default
@@ -49,11 +55,12 @@ def predict_script(path: Path, *, script_args: Sequence[str] = (), timeout: floa
                        script_args=list(script_args))
     if not usable(report):
         return None
-    probabilities = model.predict_report(report)
+    probabilities = model.predict_report(report, code)
     top, p = next(iter(probabilities.items()))
-    return {"top": top, "p": p, "probabilities": dict(list(probabilities.items())[:5]),
+    return {"top": top, "p": p, "unsure": p < UNSURE_BELOW, "probabilities": dict(list(probabilities.items())[:5]),
             "seconds": round(time.perf_counter() - started, 2),
-            "model": {"benchmark_accuracy": (model.meta.get("benchmarks") or {}).get("accuracy"),
+            "model": {"version": model.meta.get("version"),
+                      "test_accuracy": (model.meta.get("test") or {}).get("accuracy"),
                       "trained_on_runs": model.meta.get("trained_on_runs")}}
 
 

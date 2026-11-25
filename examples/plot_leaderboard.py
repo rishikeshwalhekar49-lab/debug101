@@ -33,8 +33,9 @@ LINE = 1.45 * SIZE  # line height, points
 LLMS = [("gpt-oss-120b (LLM, via Groq)", 117e9), ("gpt-oss-20b (LLM, via Groq)", 21e9)]  # OpenAI's published counts
 
 NAMES = {
-    "Trace classifier (ours, shipped)": "Trace classifier (ours, shipped)",
+    "Trace classifier (ours, shipped)": "Trace classifier v4 (ours, shipped)",
     "Trace classifier with a hidden layer (ours)": "Trace classifier, hidden layer (ours)",
+    "Trace classifier, no hidden layer (ours)": "Trace classifier, no hidden layer (ours)",
     "Random forest (300 trees)": "Random forest (300 trees)",
     "Gradient boosting": "Gradient boosting",
     "SVM (RBF kernel)": "SVM (RBF kernel)",
@@ -47,6 +48,13 @@ TRAINED = {"Hand-written rules (this project's detectors)": "no: written by hand
 
 
 def columns(counts: Dict[str, int]) -> List[Tuple[str, int]]:
+    if "colab_test" in counts:
+        return [("Rank", 4), ("Model", 26), ("Size", 11), ("x ours", 8), ("Trained on this task?", 13),
+                (f"Colab test, {counts['colab_test']} runs, never tuned on (%)", 14),
+                (f"Old test, {counts['old_test']} runs (%)", 14),
+                (f"Generated, {counts['generated']} runs (%)", 13),
+                (f"Healthy flagged (of {counts['test_healthy']})", 10), ("CPU time / prediction", 11),
+                ("Number from", 15)]
     return [("Rank", 4), ("Model", 26), ("Size", 11), ("x ours", 8), ("Trained on this task?", 13),
             (f"Hand-written test, {counts['test']} runs (%)", 14), (f"Generated, {counts['generated']} runs (%)", 13),
             (f"Healthy flagged (of {counts['test_healthy']})", 10), ("CPU time / prediction", 11),
@@ -73,10 +81,12 @@ def time_text(s: Optional[float]) -> str:
 
 def score(r: Dict[str, Any], split: str) -> Tuple[Optional[float], Optional[float]]:
     seeds = r.get("over_seeds") if r["model"] != "Majority class" else None
-    key = {"test": "test_accuracy", "generated": "generated_accuracy"}[split]
-    if seeds:
+    key = {"test": "test_accuracy", "generated": "generated_accuracy", "colab_test": "colab_test_accuracy",
+           "old_test": "old_test_accuracy"}[split]
+    if seeds and key in seeds:
         return seeds[key]["mean"], seeds[key]["std"]
-    metric = r.get(split) or {}
+    metric = (r.get("subsets") or {}).get(split) if split in ("colab_test", "old_test") else r.get(split)
+    metric = metric or {}
     return (metric.get("accuracy"), None) if metric.get("n") else (None, None)
 
 
@@ -90,21 +100,25 @@ def pct(value: Tuple[Optional[float], Optional[float]]) -> str:
 def rows_from(results: List[Dict[str, Any]], counts: Dict[str, int]) -> List[List[str]]:
     ours_bytes = next(r["bytes"] for r in results if r["model"] == "Trace classifier (ours, shipped)")
     ours_params = next(r["parameters"] for r in results if r["model"] == "Trace classifier (ours, shipped)")
-    ranked = sorted(results, key=lambda r: -(score(r, "test")[0] or 0.0))
+    split = "colab_test" if "colab_test" in counts else "test"
+    ranked = sorted(results, key=lambda r: (-(score(r, split)[0] or 0.0), -(score(r, "test")[0] or 0.0)))
     rows = []
     for rank, r in enumerate(ranked, start=1):
         seeds = r.get("over_seeds") if r["model"] != "Majority class" else None
         alarms = seeds["test_false_alarms"]["mean"] if seeds else r["test"]["false_alarms_on_healthy"]
         size = size_text(r["bytes"]) if r.get("bytes") else "-"
+        scores = [pct(score(r, "colab_test")), pct(score(r, "old_test"))] if split == "colab_test" \
+            else [pct(score(r, "test"))]
         rows.append([str(rank), NAMES.get(r["model"], r["model"]), size,
                      ratio_text(r["bytes"] / ours_bytes) if r.get("bytes") else "-",
-                     TRAINED.get(r["model"], "yes"), pct(score(r, "test")), pct(score(r, "generated")),
+                     TRAINED.get(r["model"], "yes"), *scores, pct(score(r, "generated")),
                      f"{round(alarms * counts['test_healthy'])}",
                      time_text(r["seconds_per_prediction"]) if r["model"] != "Majority class" else "-",
                      f"measured by us, {seeds['test_accuracy']['runs']} seeds" if seeds else "measured by us"])
+    blanks = ["not measured yet"] * (3 if split == "colab_test" else 2)
     for name, params in LLMS:
         rows.append(["-", name, f"{params / 1e9:.0f}B params", ratio_text(params / ours_params), "no",
-                     "not measured yet", "not measured yet", "-", "-", "needs an API key"])
+                     *blanks, "-", "-", "needs an API key"])
     return rows
 
 
@@ -160,23 +174,48 @@ def main(source: str, out: str) -> int:
     data = json.loads(Path(source).read_text(encoding="utf-8"))
     counts = data["counts"]
     ours = next(r for r in data["results"] if r["model"] == "Trace classifier (ours, shipped)")
-    benchmark_runs = sum(group.startswith("benchmark") for group in data["test_groups"])
-    notes = [
-        f"Hand-written test: {counts['test']} runs never used to choose anything: 6 scripts written separately from the"
-        f" generator ({counts['test'] - benchmark_runs} versions) and blind copies of the project's benchmarks"
-        f" ({benchmark_runs} versions: the buggy ones whose bug the classifier knows, and all the healthy twins).",
-        f"Generated: 5-fold cross-validation over {counts['generated']} runs from 80 generated scripts, whole scripts"
-        f" held out. Each model family chose its settings on {counts['dev']} other hand-written runs.",
-        f"Mean ± std over 5 seeds. x ours: file size (ours {size_text(ours['bytes'])}); for the LLMs, parameter count"
-        f" (ours {ours['parameters']:,}; OpenAI's published counts).",
-        "* the rules' time includes the 150-step training run they need. The learned models also need one 60-step"
-        " traced run (about 4 s).",
-        f"Learned models all get the same {len(FEATURES)} trace features. Apple M2 CPU, 24 Nov 2026."
-        " Code: github.com/rishikeshwalhekar49-lab/debug101",
-    ]
-    draw_table("1. Naming the bug in a PyTorch training run (9 silent bugs or \"clean\", top-1 accuracy, "
-               "ranked on the hand-written test)", columns(counts), rows_from(data["results"], counts), notes, out,
-               bold=lambda row: "(ours" in row[1], dim=lambda row: row[5] == "not measured yet")
+    rules = next((r for r in data["results"] if r["model"].startswith("Hand-written")), None)
+    if "colab_test" in counts:
+        notes = [
+            f"Colab test: {counts['colab_test']} runs of 6 training scripts from Google Colab notebooks (PyTorch tutorials,"
+            f" d2l.ai) on Colab's sample data, bugs planted by hand; never used to choose anything. Ranked on it.",
+            f"Old test: {counts['old_test']} runs (examples/holdout 05-10 and blind project benchmarks), the same runs as"
+            " every earlier version; ours was improved after seeing mistakes there, so its old-test number is optimistic.",
+            f"Generated: 5-fold cross-validation over {counts['generated']} runs (generated scripts and Colab training"
+            f" scripts), whole scripts held out. Each family chose its settings on {counts['dev']} tuning runs.",
+            f"Mean ± std over 5 seeds. x ours: file size (ours {size_text(ours['bytes'])}); for the LLMs, parameter count"
+            f" (ours {ours['parameters']:,}; OpenAI's published counts). Healthy flagged: of {counts['test_healthy']}"
+            " healthy test runs.",
+            "* the rules' time includes the 150-step training run they need; the learned models need one 150-step traced"
+            " run too, beside the monitor's run, so it adds no time to a fix.",
+            f"Every learned model gets the same {len(FEATURES)} features: the run's trace and facts read from its code."
+            " Apple M2 CPU, 25 Nov 2026. Code: github.com/rishikeshwalhekar49-lab/debug101",
+        ]
+        if rules is not None and rules.get("note_time"):
+            notes.append(rules["note_time"])
+        title = ("1. Naming the bug in a PyTorch training run (9 silent bugs or \"clean\", top-1 accuracy, "
+                 "ranked on the Colab test)")
+        dim_column = 5
+    else:
+        benchmark_runs = sum(group.startswith("benchmark") for group in data["test_groups"])
+        notes = [
+            f"Hand-written test: {counts['test']} runs never used to choose anything: 6 scripts written separately from"
+            f" the generator ({counts['test'] - benchmark_runs} versions) and blind copies of the project's benchmarks"
+            f" ({benchmark_runs} versions: the buggy ones whose bug the classifier knows, and all the healthy twins).",
+            f"Generated: 5-fold cross-validation over {counts['generated']} runs from 80 generated scripts, whole"
+            f" scripts held out. Each model family chose its settings on {counts['dev']} other hand-written runs.",
+            f"Mean ± std over 5 seeds. x ours: file size (ours {size_text(ours['bytes'])}); for the LLMs, parameter"
+            f" count (ours {ours['parameters']:,}; OpenAI's published counts).",
+            "* the rules' time includes the 150-step training run they need. The learned models also need one 60-step"
+            " traced run (about 4 s).",
+            f"Learned models all get the same {len(FEATURES)} trace features. Apple M2 CPU, 24 Nov 2026."
+            " Code: github.com/rishikeshwalhekar49-lab/debug101",
+        ]
+        title = ("1. Naming the bug in a PyTorch training run (9 silent bugs or \"clean\", top-1 accuracy, "
+                 "ranked on the hand-written test)")
+        dim_column = 5
+    draw_table(title, columns(counts), rows_from(data["results"], counts), notes, out,
+               bold=lambda row: "(ours, shipped)" in row[1], dim=lambda row: row[dim_column] == "not measured yet")
     print(f"saved {out}")
     return 0
 

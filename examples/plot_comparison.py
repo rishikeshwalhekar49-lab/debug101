@@ -2,9 +2,10 @@
 
     python examples/plot_comparison.py comparison.json model_comparison.png
 
-Top: accuracy of every model on the two test sets, with 95% Wilson intervals, so the
-gap between generated and hand-written scripts is visible. Bottom: accuracy against
-model size (log scale), with prediction time in each label.
+Top: accuracy of every model on the test set nothing was tuned on (the Colab test, when
+the data has one; the hand-written test otherwise) and on held-out generated scripts,
+with 95% Wilson intervals, so the gap between the two is visible. Bottom: accuracy
+against model size (log scale).
 """
 
 from __future__ import annotations
@@ -33,6 +34,7 @@ OURS = "Trace classifier (ours, shipped)"
 SHORT = {
     "Trace classifier (ours, shipped)": "Ours: trace classifier",
     "Trace classifier with a hidden layer (ours)": "Ours, with a hidden layer",
+    "Trace classifier, no hidden layer (ours)": "Ours, no hidden layer",
     "Random forest (300 trees)": "Random forest",
     "Gradient boosting": "Gradient boosting",
     "k-nearest neighbours": "k-nearest neighbours",
@@ -59,19 +61,28 @@ def time_label(seconds: float) -> str:
 
 
 # where each size-panel label sits: (x offset, y offset in points, horizontal alignment)
-PLACE = {OURS: (9, 9, "left"), "Trace classifier with a hidden layer (ours)": (9, 9, "left"),
-         "SVM (RBF kernel)": (-9, -9, "right"), "k-nearest neighbours": (9, -9, "left"),
-         "Random forest (300 trees)": (9, 9, "left"), "Gradient boosting": (-9, 9, "right")}
+PLACE = {OURS: (10, -11, "left"), "Trace classifier with a hidden layer (ours)": (9, 9, "left"),
+         "Trace classifier, no hidden layer (ours)": (10, 11, "left"),
+         "SVM (RBF kernel)": (-9, -9, "right"), "k-nearest neighbours": (-10, 0, "right"),
+         "Random forest (300 trees)": (9, 9, "left"), "Gradient boosting": (10, 0, "left")}
 POINT_NAMES = {OURS: "Ours", "Trace classifier with a hidden layer (ours)": "Ours, hidden layer",
+               "Trace classifier, no hidden layer (ours)": "Ours, no hidden layer",
                "SVM (RBF kernel)": "SVM", "k-nearest neighbours": "k-NN", "Random forest (300 trees)": "Random forest",
                "Gradient boosting": "Gradient boosting"}
 
 
+TEST = "test"  # set in main(): "colab_test" when the data has the Colab test
+
+
 def accuracy(r: Dict, split: str) -> float:
     """Mean over seeds when the model was retrained, else the single measurement."""
+    split = TEST if split == "test" else split
     seeds = r.get("over_seeds")
-    key = {"test": "test_accuracy", "generated": "generated_accuracy"}[split]
-    return seeds[key]["mean"] if seeds else r[split]["accuracy"]
+    key = {"test": "test_accuracy", "generated": "generated_accuracy", "colab_test": "colab_test_accuracy"}[split]
+    if seeds and key in seeds:
+        return seeds[key]["mean"]
+    metric = ((r.get("subsets") or {}).get(split) if split == "colab_test" else r[split]) or {}
+    return metric.get("accuracy")  # None: not measured (the rules are not run on the generated scripts)
 
 
 def style(ax) -> None:
@@ -83,9 +94,16 @@ def style(ax) -> None:
 
 
 def main(source: str, out: str) -> int:
+    global TEST
     data = json.loads(Path(source).read_text(encoding="utf-8"))
     results: List[Dict] = data["results"]
-    counts = data["counts"]
+    counts = dict(data["counts"])
+    colab = "colab_test" in counts
+    if colab:
+        TEST = "colab_test"
+        counts["test"] = counts["colab_test"]
+        counts["test_healthy"] = counts["colab_test_healthy"]
+    test_name = "Colab test" if colab else "Hand-written test"
     order = sorted(results, key=lambda r: accuracy(r, "test"))
     plt.rcParams["font.family"] = ["Helvetica Neue", "Arial", "DejaVu Sans"]
 
@@ -98,8 +116,8 @@ def main(source: str, out: str) -> int:
     for x in (0, 0.25, 0.5, 0.75, 1.0):
         top.axvline(x, color=GRID, linewidth=0.8, zorder=0)
     for row, r in enumerate(order):
-        pairs = ((0.12, accuracy(r, "test"), counts["test"], ORANGE),
-                 (-0.12, accuracy(r, "generated"), counts["generated"], BLUE))
+        pairs = [pair for pair in ((0.12, accuracy(r, "test"), counts["test"], ORANGE),
+                                   (-0.12, accuracy(r, "generated"), counts["generated"], BLUE)) if pair[1] is not None]
         for offset, value, n, colour in pairs:
             lo, hi = wilson(value, n)
             top.plot([lo, hi], [row + offset, row + offset], color=colour, linewidth=1.5, alpha=0.55, zorder=2,
@@ -120,7 +138,7 @@ def main(source: str, out: str) -> int:
     top.set_xticks([0, 0.25, 0.5, 0.75, 1.0])
     top.set_xticklabels(["0%", "25%", "50%", "75%", "100%"])
     top.legend(handles=[Line2D([], [], marker="o", linestyle="", color=ORANGE, markersize=7,
-                               label=f"Hand-written test (n = {counts['test']})"),
+                               label=f"{test_name} (n = {counts['test']})"),
                         Line2D([], [], marker="o", linestyle="", color=BLUE, markersize=7,
                                label=f"Held-out generated scripts (n = {counts['generated']})")],
                loc="lower left", bbox_to_anchor=(-0.58, 1.0), ncol=2, frameon=False, fontsize=10,
@@ -162,22 +180,29 @@ def main(source: str, out: str) -> int:
     for t in ticks:
         bottom.axhline(t, color=GRID, linewidth=0.8, zorder=0)
     bottom.set_xlabel("Model size (log scale)", color=INK_2, fontsize=10.5, labelpad=6)
-    bottom.set_ylabel(f"Accuracy, hand-written\ntest (n = {counts['test']})", color=INK_2, fontsize=10.5)
+    bottom.set_ylabel(f"Accuracy, {test_name.lower()}\n(n = {counts['test']})", color=INK_2, fontsize=10.5)
 
     # ---- titles and notes (text in ink, never in series colours)
     ours = next(r for r in results if r["model"] == OURS)
     fig.text(0.05, 0.955, f"A {ours['bytes'] / 1024:.0f} KB model that names the bug in a training run", fontsize=16,
              fontweight="bold", color=INK)
-    fig.text(0.05, 0.93, "Nine silent PyTorch bugs or “clean”, from 60 steps of training statistics",
+    fig.text(0.05, 0.93, "Nine silent PyTorch bugs or “clean”, from 150 steps of training statistics and its code"
+             if colab else "Nine silent PyTorch bugs or “clean”, from 60 steps of training statistics",
              fontsize=11, color=INK_2)
     fig.text(0.05, 0.875, "Accuracy by model", fontsize=12, fontweight="bold", color=INK)
     fig.text(0.05, 0.415, "Accuracy against model size", fontsize=12, fontweight="bold", color=INK)
-    fig.text(0.05, 0.018,
-             f"Hand-written test: {counts['test']} runs never used to choose anything ({counts['test_healthy']} healthy)."
-             f" Settings chosen on {counts['dev']} other hand-written runs.\nEvery learned model gets the same"
-             f" {len(FEATURES)} features; mean of 5 seeds. Lines: 95% Wilson intervals. Rules have no model file.\nLLMs (gpt-oss) not"
-             " tested yet. CPU (Apple M2), 24 Nov 2026.",
-             fontsize=7.6, color=MUTED, linespacing=1.4)
+    if colab:
+        note = (f"Colab test: {counts['test']} runs of 6 scripts from Google Colab notebooks on Colab's sample data,"
+                f" never used to choose anything ({counts['test_healthy']} healthy).\nSettings chosen on {counts['dev']}"
+                f" tuning runs. Every learned model gets the same {len(FEATURES)} features (trace and code); mean of 5"
+                " seeds.\nLines: 95% Wilson intervals. Rules have no model file. LLMs (gpt-oss) not tested yet."
+                " CPU (Apple M2), 25 Nov 2026.")
+    else:
+        note = (f"Hand-written test: {counts['test']} runs never used to choose anything ({counts['test_healthy']}"
+                f" healthy). Settings chosen on {counts['dev']} other hand-written runs.\nEvery learned model gets the"
+                f" same {len(FEATURES)} features; mean of 5 seeds. Lines: 95% Wilson intervals. Rules have no model"
+                " file.\nLLMs (gpt-oss) not tested yet. CPU (Apple M2), 24 Nov 2026.")
+    fig.text(0.05, 0.018, note, fontsize=7.6, color=MUTED, linespacing=1.4)
     fig.savefig(out, dpi=150, facecolor=SURFACE)
     print(f"saved {out}")
     return 0

@@ -30,12 +30,22 @@ class TraceClassifier:
         self.meta = dict(meta or {})
 
     # ------------------------------------------------------------ predict
-    def _forward(self, X: np.ndarray) -> np.ndarray:
-        h = (X - self.mean) / self.scale
+    @property
+    def temperature(self) -> float:
+        """Calibration: logits are divided by this (fitted on the development scripts), so p means p."""
+        return float(self.meta.get("temperature") or 1.0)
+
+    def logits(self, X: np.ndarray) -> np.ndarray:
+        h = (np.nan_to_num(np.atleast_2d(np.asarray(X, dtype=float)), nan=0.0, posinf=0.0, neginf=0.0)
+             - self.mean) / self.scale
         for index, (W, b) in enumerate(self.layers):
             h = h @ W + b
             if index < len(self.layers) - 1:
                 h = np.tanh(h)
+        return h
+
+    def _forward(self, X: np.ndarray) -> np.ndarray:
+        h = self.logits(X) / self.temperature
         h = h - h.max(axis=1, keepdims=True)
         p = np.exp(h)
         return p / p.sum(axis=1, keepdims=True)
@@ -44,11 +54,11 @@ class TraceClassifier:
         X = np.nan_to_num(np.atleast_2d(np.asarray(X, dtype=float)), nan=0.0, posinf=0.0, neginf=0.0)
         return self._forward(X)
 
-    def predict_report(self, report: Dict[str, Any]) -> Dict[str, float]:
-        """{label: probability} for one `script_runner --trace` report, most likely first."""
+    def predict_report(self, report: Dict[str, Any], source: Optional[str] = None) -> Dict[str, float]:
+        """{label: probability} for one `script_runner --trace` report and its script, most likely first."""
         if self.features != FEATURES:
             raise ValueError("the saved classifier was trained on a different feature list; retrain it")
-        p = self.probabilities(np.asarray([vectorize(report)]))[0]
+        p = self.probabilities(np.asarray([vectorize(report, source)]))[0]
         return dict(sorted(((c, round(float(v), 4)) for c, v in zip(self.classes, p)), key=lambda kv: -kv[1]))
 
     # --------------------------------------------------------------- fit

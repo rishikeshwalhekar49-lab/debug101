@@ -8,7 +8,10 @@ dropout or batch norm for `eval()` to matter, ...). The operators work on the
 generated templates and on ordinary scripts written the same way.
 
 Every operator's name is the taxonomy id of the bug it plants, so a mutant's
-label is exact.
+label is exact. Version 4 also handles scripts that update weights by hand
+(`p.grad.zero_()`, `p.grad = None`, a learning rate in a variable), a learning
+rate that is too small as well as too large, a softmax inside `F.cross_entropy`,
+and inputs whose `/ 255` scaling is simply left out.
 """
 
 from __future__ import annotations
@@ -93,9 +96,28 @@ def _insert_after_assignment(tree: ast.Module, name: str, code: str) -> bool:
     return False
 
 
+def _clears_grad(statement: ast.stmt) -> bool:
+    """`opt.zero_grad()`, `p.grad.zero_()`, `p.grad.data.zero_()` or `p.grad = None`."""
+    if isinstance(statement, ast.Expr) and isinstance(statement.value, ast.Call) \
+            and isinstance(statement.value.func, ast.Attribute):
+        func = statement.value.func
+        if func.attr == "zero_grad":
+            return True
+        if func.attr == "zero_" and "grad" in ast.unparse(func.value).split("."):
+            return True
+    return isinstance(statement, ast.Assign) and any(isinstance(t, ast.Attribute) and t.attr == "grad"
+                                                     for t in statement.targets)
+
+
 # --------------------------------------------------------------- operators
 def missing_zero_grad(source: str) -> Optional[str]:
-    return _remove_method_calls(source, "zero_grad")
+    tree = ast.parse(source)
+    removed = 0
+    for body in _bodies(tree):
+        kept = [s for s in body if not _clears_grad(s)]
+        removed += len(body) - len(kept)
+        body[:] = kept or [ast.Pass()]
+    return _finish(tree) if removed else None
 
 
 def train_eval_mode_mismatch(source: str) -> Optional[str]:
@@ -127,14 +149,15 @@ def softmax_before_cross_entropy(source: str) -> Optional[str]:
     tree = ast.parse(source)
     criteria = {t.id for node in ast.walk(tree) if isinstance(node, ast.Assign)
                 and _call_name(node.value) == "CrossEntropyLoss" for t in node.targets if isinstance(t, ast.Name)}
-    if not criteria:
+    if not criteria and not any(isinstance(n, ast.Call) and _call_name(n) == "cross_entropy" for n in ast.walk(tree)):
         return None
     model = _trained_model(tree)
     if _variant(source, 2) == 0 and model and _softmax_in_model(tree, model):
         return _finish(tree)
     changed = 0  # otherwise the softmax goes where the loss is called
     for node in ast.walk(tree):
-        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in criteria and node.args:
+        if isinstance(node, ast.Call) and node.args and ((isinstance(node.func, ast.Name) and node.func.id in criteria)
+                                                         or _call_name(node) == "cross_entropy"):
             node.args[0] = ast.parse(f"torch.softmax({ast.unparse(node.args[0])}, dim=1)", mode="eval").body
             changed += 1
     return _finish(tree) if changed else None
@@ -154,20 +177,34 @@ def wrong_loss_reduction(source: str) -> Optional[str]:
     return _finish(tree) if changed else None
 
 
+LR_NAMES = {"lr", "learning_rate", "LR", "LEARNING_RATE"}
+TOO_SMALL = 1e-4  # a learning rate 10,000 times too small: training barely moves
+
+
 def learning_rate_misconfigured(source: str) -> Optional[str]:
+    """Too large (x100, x1000 for adaptive optimizers) or, in one script of three, far too small."""
     tree = ast.parse(source)
+    small = _variant(source + "lr", 3) == 2
     changed = 0
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Call) and _call_name(node) in OPTIMIZER_NAMES:
-            factor = ADAPTIVE_LR_FACTOR if _call_name(node) in ADAPTIVE else LR_FACTOR
-            lr = next((k for k in node.keywords if k.arg == "lr"), None)
-            if lr is None:
-                node.keywords.append(ast.keyword(arg="lr", value=ast.Constant(1.0)))
-            elif isinstance(lr.value, ast.Constant) and isinstance(lr.value.value, (int, float)):
-                lr.value = ast.Constant(round(float(lr.value.value) * factor, 6))
-            else:
-                lr.value = ast.BinOp(left=lr.value, op=ast.Mult(), right=ast.Constant(factor))
-            changed += 1
+    optimizers = [node for node in ast.walk(tree) if isinstance(node, ast.Call) and _call_name(node) in OPTIMIZER_NAMES]
+    if not optimizers:  # weights updated by hand: the rate is a plain variable
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name) \
+                    and node.targets[0].id in LR_NAMES and isinstance(node.value, ast.Constant) \
+                    and isinstance(node.value.value, (int, float)):
+                node.value = ast.Constant(float(f"{node.value.value * (TOO_SMALL if small else LR_FACTOR):.3g}"))
+                changed += 1
+        return _finish(tree) if changed else None
+    for node in optimizers:
+        factor = TOO_SMALL if small else (ADAPTIVE_LR_FACTOR if _call_name(node) in ADAPTIVE else LR_FACTOR)
+        lr = next((k for k in node.keywords if k.arg == "lr"), None)
+        if lr is None:
+            node.keywords.append(ast.keyword(arg="lr", value=ast.Constant(1e-7 if small else 1.0)))
+        elif isinstance(lr.value, ast.Constant) and isinstance(lr.value.value, (int, float)):
+            lr.value = ast.Constant(float(f"{float(lr.value.value) * factor:.3g}"))
+        else:
+            lr.value = ast.BinOp(left=lr.value, op=ast.Mult(), right=ast.Constant(factor))
+        changed += 1
     return _finish(tree) if changed else None
 
 
@@ -198,8 +235,27 @@ def dead_relu(source: str) -> Optional[str]:
     return _finish(tree) if model and _insert_after_assignment(tree, model, code) else None
 
 
+class _DropScaling(ast.NodeTransformer):
+    """`pixels / 255.0` -> `pixels`: the scaling is simply forgotten."""
+
+    def __init__(self) -> None:
+        self.changed = 0
+
+    def visit_BinOp(self, node: ast.BinOp) -> ast.AST:
+        self.generic_visit(node)
+        if isinstance(node.op, ast.Div) and isinstance(node.right, ast.Constant) \
+                and isinstance(node.right.value, (int, float)) and node.right.value in (255, 255.0):
+            self.changed += 1
+            return node.left
+        return node
+
+
 def non_normalized_inputs(source: str) -> Optional[str]:
     tree = ast.parse(source)
+    dropper = _DropScaling()
+    tree = dropper.visit(tree)
+    if dropper.changed:
+        return _finish(tree)
     changed = 0
     for node in ast.walk(tree):
         if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name) \
@@ -216,7 +272,11 @@ def label_data_misalignment(source: str) -> Optional[str]:
     if not names:
         return None
     name = next((n for n in names if "train" in n), names[0])
-    code = f"{name} = {name}[torch.randperm(len({name}))]"
+    # three ways, so no single line of code gives the bug away: shuffled on their own, shifted by one
+    # example, or resampled at random
+    code = (f"{name} = {name}[torch.randperm(len({name}))]",
+            f"{name} = torch.roll({name}, 1, 0)",
+            f"{name} = {name}[torch.randint(len({name}), (len({name}),))]")[_variant(source + "labels", 3)]
     return _finish(tree) if _insert_after_assignment(tree, name, code) else None
 
 

@@ -69,9 +69,9 @@ class PipelineConfig:
     offline: bool = False
     meta_every: int = 5
     use_vectors: bool = True
-    # the trained trace classifier (silent_bug_agent/learned): "advisory" shows its guess, "active" lets it add
-    # findings and re-rank causes (measured to be worse on the benchmarks), "off" skips its traced run
-    learned: str = "advisory"
+    # the trained trace classifier (silent_bug_agent/learned): "active" (the default since version 4) lets it add
+    # findings and re-rank causes, "advisory" only shows its guess, "off" skips its traced run
+    learned: str = "active"
 
 
 class GraphState(TypedDict):
@@ -236,7 +236,7 @@ class SupervisorAgent:
     def _learned_prediction(self, path: Path) -> Optional[Dict[str, Any]]:
         try:
             return predict_script(path, script_args=self.config.script_args,
-                                  timeout=self.config.timeout_per_run, max_steps=60)
+                                  timeout=self.config.timeout_per_run, max_steps=self.config.monitor_steps)
         except Exception:  # noqa: BLE001 - the classifier is only a hint; it must never stop a run
             return None
 

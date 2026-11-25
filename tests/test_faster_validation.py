@@ -105,7 +105,7 @@ def test_three_seeds_are_one_look_at_the_usual_level():
     sandbox = FakeSandbox({BASE: {s: 1.0 + 0.01 * s for s in (1, 2, 3)}, good: {s: 0.9 + 0.012 * s for s in (1, 2, 3)}})
     verdict = MultiseedAgent(seeds=[1, 2, 3], sandbox=sandbox).verify_patch(BASE, candidate(good))
     assert verdict.extra["sequential"] == {"staged": False, "seeds_planned": 3, "seeds_run": 3,
-                                           "stopped_early": None, "alpha_used": 0.05}
+                                           "stopped_early": None, "alpha_used": 0.05, "metric": "training"}
 
 
 def test_scripts_that_write_files_run_one_at_a_time():

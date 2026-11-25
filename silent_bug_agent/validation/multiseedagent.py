@@ -320,6 +320,11 @@ _WRITES_FILES = re.compile(
     r"makedirs\(|\.mkdir\(")
 
 
+# bugs whose fix shows only in validation, so Gate 2 compares validation losses for them
+VALIDATION_METRIC_BUGS = {"train_eval_mode_mismatch"}
+VALIDATION_STEPS_FACTOR = 4
+
+
 def writes_files(code: str) -> bool:
     return bool(_WRITES_FILES.search(code))
 
@@ -402,7 +407,23 @@ class MultiseedAgent:
                 pass
         return None
 
-    def _run_one(self, code: str, seed: int) -> Run:
+    @staticmethod
+    def _validation_loss(result: ExecutionResult) -> Optional[float]:
+        """Mean of the last three validation losses (loss calls with gradients off) the traced run recorded."""
+        calls = ((result.run_report or {}).get("trace") or {}).get("loss_calls") or []
+        values = [c["value"] for c in calls if not c.get("train") and c.get("value") is not None
+                  and math.isfinite(c["value"])]
+        return sum(values[-3:]) / len(values[-3:]) if values else None
+
+    def _run_one(self, code: str, seed: int, metric: str = "training") -> Run:
+        if self.measured and metric == "validation":
+            # a train()/eval() fix changes nothing in training, only validation: run long enough to validate
+            steps = None if self.max_steps is None else self.max_steps * VALIDATION_STEPS_FACTOR
+            res = self.sandbox.run_measured(code, seed=seed, max_steps=steps, timeout=self.timeout_per_run,
+                                            script_args=self.script_args, as_file=self.as_file, trace=True)
+            loss = self._validation_loss(res)
+            finite = res.success and loss is not None and math.isfinite(loss)
+            return (loss if finite else None), res
         if self.measured:
             res = self.sandbox.run_measured(code, seed=seed, max_steps=self.max_steps, timeout=self.timeout_per_run,
                                             script_args=self.script_args, as_file=self.as_file)
@@ -419,18 +440,18 @@ class MultiseedAgent:
             return 1
         return max(1, min(jobs, (os.cpu_count() or 2) // 2))
 
-    def _run_many(self, jobs: List[Tuple[str, int]]) -> List[Run]:
+    def _run_many(self, jobs: List[Tuple[str, int]], metric: str = "training") -> List[Run]:
         """Run (code, seed) jobs, several at a time when that is safe. Results keep the order of `jobs`."""
         if not jobs:
             return []
         workers = self._workers_for({code for code, _ in jobs}, len(jobs))
         if workers <= 1:
-            return [self._run_one(code, seed) for code, seed in jobs]
+            return [self._run_one(code, seed, metric) for code, seed in jobs]
         if self._own_sandbox and self.sandbox.config.max_cpu_cores is None:
             # each child gets its share of the cores, so the runs do not fight over threads
             self.sandbox.config.max_cpu_cores = max(1, (os.cpu_count() or 2) // workers)
         with ThreadPoolExecutor(workers) as pool:
-            return list(pool.map(lambda job: self._run_one(*job), jobs))
+            return list(pool.map(lambda job: self._run_one(*job, metric), jobs))
 
     def evaluate_code_across_seeds(
         self,
@@ -441,11 +462,13 @@ class MultiseedAgent:
         runs = self._run_many([(code, seed) for seed in seeds])
         return [loss for loss, _ in runs if loss is not None], [res for _, res in runs]
 
-    def _run_pair(self, baseline_code: str, patched_code: str, seeds: Sequence[int]) -> Tuple[List[Run], List[Run]]:
+    def _run_pair(self, baseline_code: str, patched_code: str, seeds: Sequence[int],
+                  metric: str = "training") -> Tuple[List[Run], List[Run]]:
         """The baseline and the patched code on `seeds`, all at once. Baseline runs are reused when cached."""
-        key = hash(baseline_code)
+        key = hash((baseline_code, metric))
         missing = [seed for seed in seeds if (key, seed) not in self._baseline_runs]
-        runs = self._run_many([(baseline_code, seed) for seed in missing] + [(patched_code, seed) for seed in seeds])
+        runs = self._run_many([(baseline_code, seed) for seed in missing] + [(patched_code, seed) for seed in seeds],
+                              metric)
         for seed, run in zip(missing, runs):
             self._baseline_runs[(key, seed)] = run
         return [self._baseline_runs[(key, seed)] for seed in seeds], runs[len(missing):]
@@ -472,19 +495,24 @@ class MultiseedAgent:
     ) -> ValidationVerdict:
         """Verify a single candidate patch against baseline code across seeds."""
         patched_code = apply_patch_string(baseline_code, candidate)
+        metric = "validation" if getattr(candidate, "hypothesis_bug_id", "") in VALIDATION_METRIC_BUGS else "training"
+        if metric == "validation" and self.measured:
+            probe = self._run_pair(baseline_code, patched_code, self.seeds[:1], metric)
+            if probe[0][0][0] is None or probe[1][0][0] is None:
+                metric = "training"  # no validation loss within the budget: judge on training as before
 
         staged = self.sequential and len(self.seeds) > self.interim_seeds
         seeds_used = list(self.seeds[:self.interim_seeds] if staged else self.seeds)
-        base, patch = self._run_pair(baseline_code, patched_code, seeds_used)
+        base, patch = self._run_pair(baseline_code, patched_code, seeds_used, metric)
         stopped = self._interim(base, patch) if staged else None
         if staged and stopped is None:
             rest = list(self.seeds[len(seeds_used):])
-            more_base, more_patch = self._run_pair(baseline_code, patched_code, rest)
+            more_base, more_patch = self._run_pair(baseline_code, patched_code, rest, metric)
             base, patch, seeds_used = base + more_base, patch + more_patch, seeds_used + rest
         n = len(seeds_used)
         alpha = self.alpha if not staged else (self.interim_alpha if stopped else self.alpha - self.interim_alpha)
         sequential_info = {"staged": staged, "seeds_planned": len(self.seeds), "seeds_run": n,
-                           "stopped_early": stopped, "alpha_used": alpha}
+                           "stopped_early": stopped, "alpha_used": alpha, "metric": metric}
 
         base_losses = [loss for loss, _ in base if loss is not None]
         patch_losses = [loss for loss, _ in patch if loss is not None]

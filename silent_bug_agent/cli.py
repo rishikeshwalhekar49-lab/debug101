@@ -70,8 +70,8 @@ def build_parser() -> argparse.ArgumentParser:
     diagnose_parser.add_argument("script", type=str)
     diagnose_parser.add_argument("--max-steps", type=int, default=150)
     diagnose_parser.add_argument("--no-llm", action="store_true", help="Use rules and statistics only")
-    diagnose_parser.add_argument("--learned", choices=["off", "advisory", "active"], default="advisory",
-                                 help="Trace classifier: show its guess (advisory), let it rank causes too (active), or skip it")
+    diagnose_parser.add_argument("--learned", choices=["off", "advisory", "active"], default="active",
+                                 help="Trace classifier: let it rank causes too (active, the default), only show its guess (advisory), or skip it")
     diagnose_parser.add_argument("--json", action="store_true")
     diagnose_parser.add_argument("--events", action="store_true", default=False, help="Emit NDJSON events for the Ink TUI")
 
@@ -84,8 +84,8 @@ def build_parser() -> argparse.ArgumentParser:
                             help="Turn down the patch validated last time and look for a different fix")
     fix_parser.add_argument("--no-llm", action="store_true", help="Use rules and statistics only")
     fix_parser.add_argument("--seeds", type=int, default=5, help="Seeds for the statistical gate (3 to 5)")
-    fix_parser.add_argument("--learned", choices=["off", "advisory", "active"], default="advisory",
-                            help="Trace classifier: show its guess (advisory), let it rank causes too (active), or skip it")
+    fix_parser.add_argument("--learned", choices=["off", "advisory", "active"], default="active",
+                            help="Trace classifier: let it rank causes too (active, the default), only show its guess (advisory), or skip it")
     fix_parser.add_argument("--json", action="store_true")
     fix_parser.add_argument("--events", action="store_true", default=False, help="Emit NDJSON events for the Ink TUI")
 
@@ -249,7 +249,7 @@ def run_monitor(script: str, script_args: List[str], *, max_steps: int = 300, ma
 
 
 def run_diagnose(script: str, script_args: List[str], *, max_steps: int = 150, no_llm: bool = False,
-                 json_output: bool = False, events: bool = False, learned_mode: str = "advisory") -> int:
+                 json_output: bool = False, events: bool = False, learned_mode: str = "active") -> int:
     emitter = EventEmitter(enabled=events)
     target = _need_file(script)
     if target is None:
@@ -307,7 +307,8 @@ def run_diagnose(script: str, script_args: List[str], *, max_steps: int = 150, n
             print(f"LLM: {router.describe()}")
             if learned_info:
                 guesses = ", ".join(f"{bug} {p:.2f}" for bug, p in list(learned_info["probabilities"].items())[:3])
-                print(f"Trace classifier (a trained model; a hint, not proof): {guesses}")
+                unsure = " (unsure: no guess reaches 0.5)" if learned_info.get("unsure") else ""
+                print(f"Trace classifier (a trained model; a hint, not proof): {guesses}{unsure}")
             for row in rows:
                 print(f"{row['rank']}. {row['bug_id']}  (confidence {row['confidence']:.2f}, {row['diagnosed_by']})")
                 print(f"   {row['explanation']}")
@@ -364,7 +365,7 @@ def _print_run(info: Dict[str, Any], dry_run: bool, script: str = "<script>") ->
 
 def run_fix(script: str, script_args: List[str], *, max_iter: int = 3, max_rounds: int = 3, dry_run: bool = False,
             no_llm: bool = False, seeds: int = 5, json_output: bool = False, events: bool = False,
-            another: bool = False, learned_mode: str = "advisory") -> int:
+            another: bool = False, learned_mode: str = "active") -> int:
     emitter = EventEmitter(enabled=events)
     target = _need_file(script)
     if target is None:

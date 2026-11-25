@@ -44,3 +44,6 @@ node_modules/
 
 # Fixed copies of bundled examples, written by `apply`
 fixed_examples/
+
+# answers cached by examples/compare_llms.py
+.llm_answers.jsonl

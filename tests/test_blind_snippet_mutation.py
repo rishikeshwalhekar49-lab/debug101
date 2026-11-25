@@ -121,7 +121,7 @@ def test_bugs_that_cannot_happen_are_not_planted():
     sequential = mutants(render(Spec(style="sequential")))["softmax_before_cross_entropy"]
     assert "nn.Softmax(dim=1)" in sequential or "criterion(torch.softmax(output, dim=1), yb)" in sequential
     adam = mutants(render(Spec(optimizer="adam", lr=0.002)))["learning_rate_misconfigured"]
-    assert "lr=2.0" in adam  # adaptive optimizers get a larger factor
+    assert "lr=2.0" in adam or "lr=2e-07" in adam  # adaptive: a larger factor, or (one script in three) far too small
 
 
 def test_random_templates_always_render_valid_code():

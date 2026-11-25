@@ -1,0 +1,109 @@
+{
+  "sets": {
+    "old test": [
+      "holdout_test",
+      "benchmark"
+    ],
+    "Colab test": [
+      "colab_test"
+    ],
+    "tuning (dev)": [
+      "holdout_dev",
+      "colab_dev"
+    ]
+  },
+  "versions": {
+    "v1": {
+      "old test": {
+        "n": 84,
+        "correct": 57,
+        "accuracy": 0.6785714285714286,
+        "healthy": 29,
+        "healthy_flagged": 9
+      },
+      "Colab test": {
+        "n": 56,
+        "correct": 31,
+        "accuracy": 0.5535714285714286,
+        "healthy": 18,
+        "healthy_flagged": 12
+      },
+      "tuning (dev)": {
+        "n": 74,
+        "correct": 54,
+        "accuracy": 0.7297297297297297,
+        "healthy": 20,
+        "healthy_flagged": 5
+      }
+    },
+    "v2": {
+      "old test": {
+        "n": 84,
+        "correct": 60,
+        "accuracy": 0.7142857142857143,
+        "healthy": 29,
+        "healthy_flagged": 8
+      },
+      "Colab test": {
+        "n": 56,
+        "correct": 27,
+        "accuracy": 0.48214285714285715,
+        "healthy": 18,
+        "healthy_flagged": 12
+      },
+      "tuning (dev)": {
+        "n": 74,
+        "correct": 56,
+        "accuracy": 0.7567567567567568,
+        "healthy": 20,
+        "healthy_flagged": 5
+      }
+    },
+    "v3": {
+      "old test": {
+        "n": 84,
+        "correct": 72,
+        "accuracy": 0.8571428571428571,
+        "healthy": 29,
+        "healthy_flagged": 6
+      },
+      "Colab test": {
+        "n": 56,
+        "correct": 31,
+        "accuracy": 0.5535714285714286,
+        "healthy": 18,
+        "healthy_flagged": 15
+      },
+      "tuning (dev)": {
+        "n": 74,
+        "correct": 57,
+        "accuracy": 0.7702702702702703,
+        "healthy": 20,
+        "healthy_flagged": 13
+      }
+    },
+    "v4": {
+      "old test": {
+        "n": 84,
+        "correct": 80,
+        "accuracy": 0.9523809523809523,
+        "healthy": 29,
+        "healthy_flagged": 1
+      },
+      "Colab test": {
+        "n": 56,
+        "correct": 45,
+        "accuracy": 0.8035714285714286,
+        "healthy": 18,
+        "healthy_flagged": 3
+      },
+      "tuning (dev)": {
+        "n": 74,
+        "correct": 65,
+        "accuracy": 0.8783783783783784,
+        "healthy": 20,
+        "healthy_flagged": 3
+      }
+    }
+  }
+}

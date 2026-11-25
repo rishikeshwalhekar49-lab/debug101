@@ -6,12 +6,17 @@
 Every model answers the same question for the same runs: which of nine planted bugs,
 or "clean". The data has three roles (see silent_bug_agent/learned/train.py):
 
-* generated scripts ("train"): models learn from them; 5-fold cross-validation over
-  them, holding out whole templates, is the "generated" score;
-* hand-written development scripts ("holdout_dev"): each model family picks its
+* training scripts ("train", generated, and "colab_train", from Colab notebooks): models
+  learn from them; 5-fold cross-validation over them, holding out whole scripts, is
+  the "generated" score;
+* development scripts ("holdout_dev" and "colab_dev"): each model family picks its
   settings here, from a small grid, the same way for every family;
-* hand-written test scripts ("holdout_test" + the blind project benchmarks): never
-  used to choose anything; their accuracy is the "hand-written test" score.
+* test scripts, never used to choose anything: the hand-written ones and the blind
+  project benchmarks (the "old test", 84 runs, the same runs for every version) and
+  the Colab-notebook test scripts ("colab_test"). "test" is all of them together.
+
+Every model gets the same features: the run's trace and, from version 4, facts read
+from the code (silent_bug_agent/learned/code.py).
 
 With --seeds N every learned model is retrained N times (fold split and initialisation),
 and scores are mean ± standard deviation.
@@ -43,12 +48,12 @@ if str(REPO_ROOT) not in sys.path:
 
 from silent_bug_agent.learned.features import FEATURES, vectorize  # noqa: E402
 from silent_bug_agent.learned.model import TraceClassifier  # noqa: E402
-from silent_bug_agent.learned.train import _folds  # noqa: E402
+from silent_bug_agent.learned.train import DEV_SPLITS, TEST_SPLITS, TRAIN_SPLITS, _folds, masked  # noqa: E402
 from silent_bug_agent.mutation.dataset import read  # noqa: E402
 
 CLEAN = "clean"
 REPORT_ONLY = {"unset_random_seed"}
-TEST_SPLITS = ("holdout_test", "benchmark")
+SUBSETS = {"old_test": ("holdout_test", "benchmark"), "colab_test": ("colab_test",)}
 
 
 # ----------------------------------------------------------------- metrics
@@ -74,10 +79,12 @@ def spread(values: Sequence[float]) -> Dict[str, float]:
 
 # ---------------------------------------------------------------- models
 class Ours:
-    def __init__(self, seed: int = 0, hidden: int = 32, l2: float = 1e-3) -> None:
-        self.seed, self.hidden, self.l2 = seed, hidden, l2
+    def __init__(self, seed: int = 0, hidden: int = 32, l2: float = 1e-3, mask: bool = False) -> None:
+        self.seed, self.hidden, self.l2, self.mask = seed, hidden, l2, mask
 
     def fit(self, X: np.ndarray, y: List[str]) -> "Ours":
+        if self.mask:
+            X, y = masked(X, y)
         self.model = TraceClassifier.fit(X, y, hidden=self.hidden, l2=self.l2, seed=self.seed)
         return self
 
@@ -143,8 +150,10 @@ def _sklearn_builder(name: str) -> Optional[Callable[..., Any]]:
 
 FAMILIES: Dict[str, List[Dict[str, Any]]] = {  # each grid lists the simplest settings first
     "Majority class": [{}],
-    "Trace classifier (ours, shipped)": [{"hidden": 0, "l2": l2} for l2 in (1e-3, 1e-2, 1e-1)],
-    "Trace classifier with a hidden layer (ours)": [{"hidden": h, "l2": l2} for h in (16, 32) for l2 in (1e-3, 1e-2)],
+    # the shipped settings, exactly as train.py chose them on the tuning scripts (averaged over three seeds)
+    "Trace classifier (ours, shipped)": [{"hidden": 16, "l2": 1e-3, "mask": True}],
+    "Trace classifier, no hidden layer (ours)": [{"hidden": 0, "l2": l2, "mask": m} for m in (False, True)
+                                                 for l2 in (1e-3, 1e-2, 1e-1)],
     "Random forest (300 trees)": [{"leaf": leaf, "feats": f} for leaf in (1, 3) for f in ("sqrt", 0.5)],
     "Gradient boosting": [{"lr": lr, "leaves": n} for lr in (0.05, 0.1) for n in (15, 31)],
     "k-nearest neighbours": [{"k": k} for k in (3, 5, 9, 15)],
@@ -179,8 +188,9 @@ def evaluate_family(name: str, factory: Callable[..., Any], data: Dict[str, Any]
             for index, label in zip(np.flatnonzero(test), model.predict(X[test])):
                 predicted[index] = label
         final = factory(seed, **choice).fit(X, y)
+        test_predicted = final.predict(data["Xt"])
         per_seed.append((metrics(y, predicted), metrics(data["yd"], final.predict(data["Xd"])) if data["yd"] else {},
-                         metrics(data["yt"], final.predict(data["Xt"])), final))
+                         metrics(data["yt"], test_predicted), final, subsets(data, test_predicted)))
     final = per_seed[0][3]
     started = time.perf_counter()
     for row in data["Xt"]:
@@ -189,10 +199,22 @@ def evaluate_family(name: str, factory: Callable[..., Any], data: Dict[str, Any]
     return {"model": name, "kind": "trained on trace features", "settings": choice,
             "generated": per_seed[0][0], "dev": per_seed[0][1], "test": per_seed[0][2],
             "test_predictions": final.predict(data["Xt"]), "seconds_per_prediction": per_prediction,
+            "subsets": per_seed[0][4],
             "over_seeds": {"generated_accuracy": spread([r[0]["accuracy"] for r in per_seed]),
                            "test_accuracy": spread([r[2]["accuracy"] for r in per_seed]),
-                           "test_false_alarms": spread([r[2]["false_alarms_on_healthy"] for r in per_seed])},
+                           "test_false_alarms": spread([r[2]["false_alarms_on_healthy"] for r in per_seed]),
+                           **{f"{name}_accuracy": spread([r[4][name]["accuracy"] for r in per_seed])
+                              for name in SUBSETS}},
             **final.size()}
+
+
+def subsets(data: Dict[str, Any], predicted: Sequence[str]) -> Dict[str, Any]:
+    """Test metrics on the old test runs and on the Colab test runs separately."""
+    out = {}
+    for name, splits in SUBSETS.items():
+        keep = [i for i, split in enumerate(data["test_splits"]) if split in splits]
+        out[name] = metrics([data["yt"][i] for i in keep], [predicted[i] for i in keep])
+    return out
 
 
 # ------------------------------------------------------------- the rules
@@ -215,21 +237,28 @@ def rules_label(code: str, max_steps: int = 150) -> str:
 
 
 def evaluate_rules(rows: List[Dict[str, Any]], data: Dict[str, Any], workers: int,
-                   earlier: Optional[List[str]]) -> Dict[str, Any]:
+                   earlier: Optional[List[str]], only_evaluation: bool = True) -> Dict[str, Any]:
     started = time.perf_counter()
     if earlier is not None and len(earlier) == len(rows):
         predictions, seconds = earlier, None
+    elif only_evaluation:  # the training runs are many; the detectors are scored on dev and test only
+        rows = [r for r in rows if r["split"] in DEV_SPLITS + TEST_SPLITS]
+        with ThreadPoolExecutor(workers) as pool:
+            predictions = list(pool.map(rules_label, [r["code"] for r in rows]))
+        seconds = (time.perf_counter() - started) * workers / max(1, len(rows))
     else:
         with ThreadPoolExecutor(workers) as pool:
             predictions = list(pool.map(rules_label, [r["code"] for r in rows]))
         seconds = (time.perf_counter() - started) * workers / max(1, len(rows))
-    by_split = {"train": [], "holdout_dev": [], "test": []}
+    by_split: Dict[str, List[str]] = {"train": [], "dev": [], "test": []}
     for row, label in zip(rows, predictions):
-        key = "test" if row["split"] in TEST_SPLITS else row["split"]
-        by_split.setdefault(key, []).append(label)
+        key = "test" if row["split"] in TEST_SPLITS else ("dev" if row["split"] in DEV_SPLITS else "train")
+        by_split[key].append(label)
     return {"model": "Hand-written rules (this project's detectors)", "kind": "rules, no training",
-            "generated": metrics(data["y"], by_split["train"]), "dev": metrics(data["yd"], by_split["holdout_dev"]),
+            "generated": metrics(data["y"], by_split["train"]) if len(by_split["train"]) == len(data["y"]) else {"n": 0},
+            "dev": metrics(data["yd"], by_split["dev"]),
             "test": metrics(data["yt"], by_split["test"]), "test_predictions": by_split["test"],
+            "subsets": subsets(data, by_split["test"]),
             "all_predictions": predictions, "seconds_per_prediction": seconds, "bytes": None, "parameters": None,
             "note": "each prediction includes a 150-step training run"}
 
@@ -301,15 +330,16 @@ def main(argv: Optional[List[str]] = None) -> int:
         print("This data file has no source code per run; rebuild it with the current dataset builder.",
               file=sys.stderr)
         return 2
-    train = [r for r in rows if r["split"] == "train"]
-    dev = [r for r in rows if r["split"] == "holdout_dev"]
+    train = [r for r in rows if r["split"] in TRAIN_SPLITS]
+    dev = [r for r in rows if r["split"] in DEV_SPLITS]
     test = [r for r in rows if r["split"] in TEST_SPLITS]
 
     def matrix(chosen: List[Dict[str, Any]]) -> np.ndarray:
-        return np.asarray([vectorize(r["report"]) for r in chosen]).reshape(len(chosen), len(FEATURES))
+        return np.asarray([vectorize(r["report"], r.get("code")) for r in chosen]).reshape(len(chosen), len(FEATURES))
 
     data = {"X": matrix(train), "y": [r["label"] for r in train], "groups": [r["group"] for r in train],
-            "Xd": matrix(dev), "yd": [r["label"] for r in dev], "Xt": matrix(test), "yt": [r["label"] for r in test]}
+            "Xd": matrix(dev), "yd": [r["label"] for r in dev], "Xt": matrix(test), "yt": [r["label"] for r in test],
+            "test_splits": [r["split"] for r in test]}
     print(f"{len(train)} generated runs, {len(dev)} development runs, {len(test)} test runs "
           f"({sum(1 for r in test if r['label'] == CLEAN)} healthy)")
 
@@ -347,9 +377,12 @@ def main(argv: Optional[List[str]] = None) -> int:
         print(f"{r['model'][:44]:44} {gen:>10} {tst:>18} {r['test']['false_alarms_on_healthy']:16.1%} {size:>10}")
     if options.json:
         Path(options.json).write_text(json.dumps({
-            "test_labels": data["yt"], "test_groups": [r["group"] for r in test],
+            "test_labels": data["yt"], "test_groups": [r["group"] for r in test], "test_splits": data["test_splits"],
             "counts": {"generated": len(train), "dev": len(dev), "test": len(test),
-                       "test_healthy": sum(1 for r in test if r["label"] == CLEAN)},
+                       "test_healthy": sum(1 for r in test if r["label"] == CLEAN),
+                       **{name: sum(1 for r in test if r["split"] in splits) for name, splits in SUBSETS.items()},
+                       **{f"{name}_healthy": sum(1 for r in test if r["split"] in splits and r["label"] == CLEAN)
+                          for name, splits in SUBSETS.items()}},
             "results": results}, indent=2), encoding="utf-8")
     return 0
 
