@@ -72,8 +72,9 @@ def differences(data: Dict[str, Any]) -> List[str]:
     return lines
 
 
-VERSION_NAMES = {"shreyas": "Shreyas's (DLDebugger, 0619721)", "v1": "v1 (0728d71)", "v2": "v2", "v3": "v3 (b7179ad)",
+VERSION_NAMES = {"shreyas": "v0 (original: DLDebugger, 0619721)", "v1": "v1 (0728d71)", "v2": "v2", "v3": "v3 (b7179ad)",
                  "v4": "v4 (this one)"}
+SHORT = {"shreyas": "v0"}  # how each version is named in the notes
 MANY_CAPABILITIES = [  # what each version has, as released
     ("Pipeline sees a blind copy (no hints)", {"shreyas": "no", "v1": "yes", "v3": "yes", "v4": "yes"}),
     ("Gate 2 seeds in parallel, two looks", {"shreyas": "no", "v1": "yes, with an early stop that cost a repair",
@@ -104,15 +105,18 @@ def many(data: Dict[str, Any], out: str) -> int:
     for subset in [k for k in data["summary"] if k != "all"]:
         part = data["summary"][subset]
         per_set.append(f"{subset} ({part[names[0]]['buggy']} buggy, {part[names[0]]['healthy']} healthy): right cause"
-                       " first " + ", ".join(f"{n} {part[n]['right_cause_first']}" for n in names)
-                       + "; planted bug fixed " + ", ".join(f"{n} {part[n]['planted_bug_fixed']}" for n in names)
-                       + "; healthy changed " + ", ".join(f"{n} {part[n]['healthy_changed']}" for n in names) + ".")
+                       " first " + ", ".join(f"{SHORT.get(n, n)} {part[n]['right_cause_first']}" for n in names)
+                       + "; planted bug fixed " + ", ".join(f"{SHORT.get(n, n)} {part[n]['planted_bug_fixed']}"
+                                                            for n in names)
+                       + "; healthy changed " + ", ".join(f"{SHORT.get(n, n)} {part[n]['healthy_changed']}"
+                                                          for n in names) + ".")
     n = first["buggy"] + first["healthy"]
-    notes = [f"Same {n} scripts for every version, offline (no LLM key), each version's own `fix --dry-run --no-llm`,"
+    notes = ["v0 is Shreyas's original version of the debugger (DLDebugger, commit 0619721).",
+             f"Same {n} scripts for every version, offline (no LLM key), each version's own `fix --dry-run --no-llm`,"
              " fresh memory every run, run back to back on one machine (Apple M2 CPU, 25 Nov 2026). v2 was a"
              " classifier between v1 and v3 and never shipped a pipeline of its own.", *per_set,
              "The old scripts (blind benchmarks and examples/holdout 05-10) were seen when v3 was compared with"
-             " Shreyas's version; the Colab test scripts were never used to choose anything.",
+             " v0; the Colab test scripts were never used to choose anything.",
              "Code: examples/compare_versions.py, github.com/rishikeshwalhekar49-lab/debug101"]
     cols = [("Measure", 30)] + [(VERSION_NAMES.get(n, n), 17) for n in names]
     draw_table("2. Every version of the debugger on the same scripts, offline", cols, rows, notes, out,

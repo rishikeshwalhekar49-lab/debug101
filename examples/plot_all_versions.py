@@ -32,7 +32,7 @@ CLASSES = {"clean", "missing_zero_grad", "train_eval_mode_mismatch", "softmax_be
            "wrong_loss_reduction", "learning_rate_misconfigured", "frozen_layer_no_grad", "dead_relu",
            "non_normalized_inputs", "label_data_misalignment"}
 OLD_SETS = ("benchmarks", "hand-written test")
-NAMES = {"shreyas": "Shreyas's\n(0619721)", "v1": "v1", "v2": "v2", "v3": "v3", "v4": "v4\n(this one)"}
+NAMES = {"shreyas": "v0\n(original)", "v1": "v1", "v2": "v2", "v3": "v3", "v4": "v4\n(this one)"}
 
 
 def wilson(k: int, n: int, z: float = 1.96) -> Tuple[float, float]:
@@ -119,7 +119,8 @@ def main(classifier_file: str, pipeline_file: str, out: str) -> int:
          "The whole pipeline, offline (fix, no LLM)", note_below=times)
     fig.suptitle("debug101, every version on the same scripts", x=0.012, y=0.995, ha="left", fontsize=15,
                  fontweight="bold", color=INK)
-    notes = ("Left: Shreyas's version names the bug with its rule detectors (top cause of its own fix); v1-v4 with "
+    notes = ("v0 is Shreyas's original version (DLDebugger, commit 0619721). "
+             "Left: v0 names the bug with its rule detectors (top cause of its own fix); v1-v4 with "
              "the trained trace classifier. v2 was never released on its own (a classifier between v1 and v3, "
              "rebuilt exactly from its data), so it has no pipeline bar. "
              f"Right: {n_buggy + n_healthy} scripts (the old test scripts, the project benchmarks including bugs "
